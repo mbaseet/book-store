@@ -124,3 +124,5 @@ deadline.
 - `docs/architecture.md` — architecture and security rationale.
 - `docs/brand/mint-meow-visual-reference.pdf` — canonical visual reference for
   the current Mint Meow brand implementation.
+
+force update
