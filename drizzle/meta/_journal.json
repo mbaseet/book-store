@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784351105998,
+      "tag": "0000_green_mephisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784355029945,
+      "tag": "0001_omniscient_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784363774272,
+      "tag": "0002_woozy_roughhouse",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784365544474,
+      "tag": "0003_opposite_maginty",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784370000000,
+      "tag": "0004_fresh_cassidy",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Baloo Bhaijaan 2", "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  --font-serif: "Chewy", "Baloo Bhaijaan 2", "Avenir Next", sans-serif;
+  --font-display: "Chewy", "Baloo Bhaijaan 2", "Avenir Next", sans-serif;
+  --color-mint-deep: #0d7d78;
+  --color-mint-soft: #9fd9c2;
+  --color-sunshine: #ffd14d;
+  --color-cream: #faf8f3;
+  --color-mint-ink: #075f5b;
+}
+
+:root {
+  font-family: var(--font-sans);
+  color: #123f3c;
+  background: #faf8f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html[dir="rtl"] body {
+  font-family: "Baloo Bhaijaan 2", Tahoma, Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 0 0, rgb(159 217 194 / 18%), transparent 28rem),
+    #faf8f3;
+}
+
+button,
+a {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: #ffd14d;
+  color: #075f5b;
+}
+
+:focus-visible {
+  outline: 3px solid #ffd14d;
+  outline-offset: 3px;
+}
+
+@keyframes mint-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-10px) rotate(1deg); }
+}
+
+.mint-float {
+  animation: mint-float 5s ease-in-out infinite;
+}
+
+.mint-dot-grid {
+  background-image: radial-gradient(rgb(13 125 120 / 20%) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.mint-soft-shadow {
+  box-shadow: 0 18px 50px rgb(7 95 91 / 14%);
+}
+
+.mint-heading {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: .01em;
+}
+
+.mint-cta {
+  background: #ffd14d;
+  color: #075f5b;
+  font-weight: 800;
+}
+
+.mint-cta:hover {
+  background: #ffe17d;
+}

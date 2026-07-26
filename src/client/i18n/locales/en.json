@@ -1,0 +1,21 @@
+{
+  "brand": "Personalized Storybooks",
+  "nav": {
+    "home": "Home",
+    "shop": "Shop stories",
+    "howItWorks": "How it works",
+    "faq": "FAQ",
+    "trackOrder": "Track order",
+    "account": "My account"
+  },
+  "home": {
+    "eyebrow": "A keepsake made just for them",
+    "title": "Let your child become the hero of the story.",
+    "description": "Choose a story, share their name and photo, and create a book they will treasure forever.",
+    "browse": "Explore stories",
+    "how": "See how it works"
+  },
+  "common": {
+    "comingSoon": "The storefront foundation is being prepared."
+  }
+}

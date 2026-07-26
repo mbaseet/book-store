@@ -1,0 +1,1 @@
+ALTER TABLE `checkout_drafts` ADD `revision` integer DEFAULT 0 NOT NULL;
