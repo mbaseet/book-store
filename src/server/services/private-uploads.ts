@@ -113,6 +113,7 @@ export async function initiatePrivateUpload(
   const expiresAt = new Date(Date.now() + TEMP_UPLOAD_LIFETIME_MS)
   const parameters = {
     allowed_formats: 'jpg,jpeg,png,webp',
+    type: 'authenticated',
     overwrite: 'false',
     public_id: cloudinaryPublicId,
     timestamp,
@@ -135,7 +136,7 @@ export async function initiatePrivateUpload(
     claimToken,
     expiresAt: expiresAt.toISOString(),
     upload: {
-      endpoint: `https://api.cloudinary.com/v1_1/${encodeURIComponent(env.CLOUDINARY_CLOUD_NAME)}/image/authenticated`,
+      endpoint: `https://api.cloudinary.com/v1_1/${encodeURIComponent(env.CLOUDINARY_CLOUD_NAME)}/image/upload`,
       fields: {
         ...parameters,
         api_key: env.CLOUDINARY_API_KEY,
