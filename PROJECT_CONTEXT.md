@@ -164,9 +164,9 @@ upload smoke test passes. Because the current account is on Workers Free,
 staging temporarily uses a 5,000-iteration PBKDF2 work factor solely to create
 test credentials inside the 10 ms CPU limit; it must be removed after upgrading
 to Workers Paid. Production Cloudflare resources are not provisioned.
-The first staging administrator still needs to be created through the one-time
-HTTPS bootstrap flow with a new private password, after which the staging
-bootstrap secret must be removed.
+The first staging administrator has been created through the HTTPS bootstrap
+flow, and the one-time staging bootstrap secret has been removed from the
+Worker.
 
 1. Confirm the internal process for reviewing InstaPay and mobile-wallet
    payment proofs before production begins.
