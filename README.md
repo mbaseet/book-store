@@ -57,6 +57,24 @@ To add one clearly fictional order for local Admin/Reports review, run
 `pnpm db:seed:demo:local`. It is idempotent, adds no child photos or payment
 proofs, and must never be run against the remote database.
 
+### Cloudinary
+
+Cloudinary credentials are required for catalog artwork, child photos, and
+payment proofs. Use a dedicated staging product environment where possible,
+copy `.dev.vars.example` to the ignored `.dev.vars`, and populate
+`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and
+`CLOUDINARY_API_SECRET`. Never put the API secret in a `VITE_*` variable.
+
+With the local Worker running, verify the authenticated-media path using only a
+synthetic one-pixel image:
+
+```sh
+pnpm smoke:cloudinary
+```
+
+See `docs/cloudinary.md` for credential handling, smoke-test coverage, and
+Cloudflare environment setup.
+
 The storefront runs without story records until the first administrator adds
 them; the initial collections, editable policy drafts, and confirmed InstaPay
 details are seeded. Child-photo and payment-proof uploads require Cloudinary
@@ -87,6 +105,31 @@ pnpm test
 pnpm build
 ```
 
+## Cloudflare staging
+
+The isolated staging environment uses:
+
+- Worker: `personalized-storybooks-eg-staging`
+- D1: `personalized-storybooks-eg-staging-db`
+- URL: <https://personalized-storybooks-eg-staging.mint-meow.workers.dev>
+
+For a brand-new staging database, run `pnpm db:migrate:staging` followed by
+`pnpm db:seed:staging:bootstrap` once. Deploy with `pnpm deploy:staging`; this
+sets `CLOUDFLARE_ENV=staging` during the Vite build so Wrangler publishes the
+generated staging configuration instead of the top-level production config.
+Never run the local demo seed remotely.
+
+Keep `SESSION_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`, and all three Cloudinary values
+as staging Worker secrets. After deployment, run:
+
+```sh
+SMOKE_BASE_URL=https://personalized-storybooks-eg-staging.mint-meow.workers.dev pnpm smoke:cloudinary
+```
+
+Create the first staging administrator through the HTTPS `/admin` bootstrap
+screen with a unique password. Remove `ADMIN_BOOTSTRAP_TOKEN` from the staging
+Worker after bootstrap succeeds.
+
 ## Cloudflare deployment checklist
 
 This application deploys as one full-stack **Cloudflare Worker with Static
@@ -103,7 +146,9 @@ and the built React application together.
    Cloudinary, and Resend. Put only non-sensitive runtime configuration such
    as `APP_BASE_URL` and `ENVIRONMENT=production` in Worker variables.
 5. Deploy the Worker with `pnpm deploy`, using its initial `workers.dev` URL
-   as `APP_BASE_URL` until the production domain is connected.
+   as `APP_BASE_URL` until the production domain is connected. The deploy
+   script rebuilds the top-level target first so it cannot reuse a previously
+   generated staging deployment configuration.
 6. In Cloudflare Dashboard, open the Worker’s **Settings → Builds** and connect
    the GitHub repository. Use Node 22, `pnpm build` as the build command, and
    `pnpm deploy` as the production deploy command. Keep migrations and the

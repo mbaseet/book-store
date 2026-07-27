@@ -30,6 +30,7 @@ uploadRoutes.post('/uploads/sign', async (context) => {
 
   try {
     const upload = await initiatePrivateUpload(db, context.env, parsed.data)
+    context.header('Cache-Control', 'no-store')
     return context.json({ upload }, 201)
   } catch (error) {
     if (error instanceof PrivateUploadError) {

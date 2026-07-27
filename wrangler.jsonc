@@ -15,6 +15,27 @@
       "migrations_dir": "drizzle"
     }
   ],
+  "env": {
+    "staging": {
+      "preview_urls": false,
+      "workers_dev": true,
+      "vars": {
+        "APP_BASE_URL": "https://personalized-storybooks-eg-staging.mint-meow.workers.dev",
+        "ENVIRONMENT": "production"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "personalized-storybooks-eg-staging-db",
+          "database_id": "199de385-a579-419a-bc84-675ee17a6f7c",
+          "migrations_dir": "drizzle"
+        }
+      ],
+      "triggers": {
+        "crons": ["*/15 * * * *"]
+      }
+    }
+  },
   "observability": {
     "enabled": true,
     "logs": {

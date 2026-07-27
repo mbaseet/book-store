@@ -155,6 +155,16 @@ Read this file before changing checkout, payments, retention, or scope.
 
 ## Open items before production launch
 
+Staging status as of 2026-07-27: the isolated Cloudflare Worker and D1 database
+are deployed at
+<https://personalized-storybooks-eg-staging.mint-meow.workers.dev>. All schema
+migrations and the bootstrap seed are applied, encrypted Cloudinary/session
+secrets are configured, preview URLs are disabled, and the deployed private
+upload smoke test passes. Production Cloudflare resources are not provisioned.
+The first staging administrator still needs to be created through the one-time
+HTTPS bootstrap flow with a new private password, after which the staging
+bootstrap secret must be removed.
+
 1. Confirm the internal process for reviewing InstaPay and mobile-wallet
    payment proofs before production begins.
 2. Provide the final production domain, favicon/app icon, final English font

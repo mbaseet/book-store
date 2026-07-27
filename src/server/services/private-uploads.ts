@@ -113,10 +113,13 @@ export async function initiatePrivateUpload(
   const expiresAt = new Date(Date.now() + TEMP_UPLOAD_LIFETIME_MS)
   const parameters = {
     allowed_formats: 'jpg,jpeg,png,webp',
-    type: 'authenticated',
+    backup: 'false',
+    discard_original_filename: 'true',
     overwrite: 'false',
     public_id: cloudinaryPublicId,
     timestamp,
+    transformation: 'fl_force_strip',
+    type: 'authenticated',
   }
   const signature = await cloudinaryApiSignature(env, parameters)
 

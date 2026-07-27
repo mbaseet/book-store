@@ -459,7 +459,16 @@ export async function uploadPrivateFile(locale: Locale, kind: PrivateUploadReque
   for (const [key, value] of Object.entries(signed.upload.upload.fields)) formData.set(key, value)
   formData.set('file', file)
   const uploadResponse = await fetch(signed.upload.upload.endpoint, { method: 'POST', body: formData })
-  if (!uploadResponse.ok) throw new ApiClientError(uploadResponse.status, 'The image could not be uploaded. Please try again.')
+  const uploadPayload: unknown = await uploadResponse.json().catch(() => null)
+  const expectedPublicId = signed.upload.upload.fields.public_id
+  if (
+    !uploadResponse.ok ||
+    !isRecord(uploadPayload) ||
+    uploadPayload.public_id !== expectedPublicId ||
+    uploadPayload.type !== 'authenticated'
+  ) {
+    throw new ApiClientError(uploadResponse.status || 500, 'The image could not be uploaded. Please try again.')
+  }
   return {
     uploadId: signed.upload.uploadId,
     claimToken: signed.upload.claimToken,

@@ -420,7 +420,10 @@ checkoutRoutes.post('/checkout', async (context) => {
     )
   } catch (error) {
     await Promise.allSettled(claimedDraftUploadIds.map((uploadId) => releasePrivateDraftUploadClaim(db, draft.id, uploadId)))
-    await releasePrivateCheckoutUploadClaim(db, parsed.data.paymentProofUpload)
+    // Only release the payment proof when this request acquired its claim.
+    // Otherwise a concurrent failed request could clear another checkout's
+    // successful claim and make the proof reusable.
+    if (paymentProof) await releasePrivateCheckoutUploadClaim(db, parsed.data.paymentProofUpload)
     const message = error instanceof PrivateUploadError ? error.message : 'An uploaded image could not be verified.'
     return errorResponse(context, 422, 'invalid_upload', message)
   }

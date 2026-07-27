@@ -1,0 +1,16 @@
+# Local Worker bindings. Copy this file to .dev.vars and replace placeholders.
+# Never commit .dev.vars or paste real secrets into frontend VITE_* variables.
+
+ENVIRONMENT=development
+APP_BASE_URL=http://localhost:5173
+
+SESSION_SECRET=replace-with-at-least-32-random-characters
+ADMIN_BOOTSTRAP_TOKEN=replace-with-a-strong-random-token
+
+CLOUDINARY_CLOUD_NAME=replace-with-cloud-name
+CLOUDINARY_API_KEY=replace-with-api-key
+CLOUDINARY_API_SECRET=replace-with-api-secret
+
+# Optional for local password-reset email delivery.
+RESEND_API_KEY=
+EMAIL_FROM=
