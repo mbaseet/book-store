@@ -1,4 +1,5 @@
-const PBKDF2_ITERATIONS = 150_000
+export const DEFAULT_PASSWORD_HASH_ITERATIONS = 150_000
+export const MINIMUM_PASSWORD_HASH_ITERATIONS = 5_000
 const SALT_BYTES = 16
 const HASH_BITS = 256
 
@@ -36,6 +37,38 @@ async function derivePasswordHash(password: string, salt: Uint8Array, iterations
   return new Uint8Array(derived)
 }
 
+function storedPasswordHashIterations(stored: string) {
+  const parts = stored.split('$')
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return null
+  if (!/^\d+$/.test(parts[1])) return null
+
+  const iterations = Number.parseInt(parts[1], 10)
+  if (!Number.isSafeInteger(iterations)) return null
+  return iterations
+}
+
+/**
+ * A staging-only override allows the non-public Free-plan Worker to create a
+ * test administrator without exceeding its 10 ms CPU limit. Production must
+ * leave the variable unset and use the 150,000-iteration default.
+ */
+export function passwordHashIterations(configured: string | undefined) {
+  if (!configured) return DEFAULT_PASSWORD_HASH_ITERATIONS
+  if (!/^\d+$/.test(configured)) {
+    throw new Error('Invalid password hash iteration configuration.')
+  }
+
+  const iterations = Number.parseInt(configured, 10)
+  if (
+    !Number.isSafeInteger(iterations) ||
+    iterations < MINIMUM_PASSWORD_HASH_ITERATIONS ||
+    iterations > DEFAULT_PASSWORD_HASH_ITERATIONS
+  ) {
+    throw new Error('Invalid password hash iteration configuration.')
+  }
+  return iterations
+}
+
 function constantTimeEqual(left: Uint8Array, right: Uint8Array) {
   if (left.length !== right.length) return false
 
@@ -46,18 +79,21 @@ function constantTimeEqual(left: Uint8Array, right: Uint8Array) {
   return difference === 0
 }
 
-export async function hashPassword(password: string) {
+export async function hashPassword(password: string, iterations = DEFAULT_PASSWORD_HASH_ITERATIONS) {
+  if (!Number.isSafeInteger(iterations) || iterations < MINIMUM_PASSWORD_HASH_ITERATIONS) {
+    throw new Error('Invalid password hash iterations.')
+  }
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES))
-  const hash = await derivePasswordHash(password, salt, PBKDF2_ITERATIONS)
-  return `pbkdf2_sha256$${PBKDF2_ITERATIONS}$${bytesToHex(salt)}$${bytesToHex(hash)}`
+  const hash = await derivePasswordHash(password, salt, iterations)
+  return `pbkdf2_sha256$${iterations}$${bytesToHex(salt)}$${bytesToHex(hash)}`
 }
 
 export async function verifyPassword(password: string, stored: string) {
   const parts = stored.split('$')
   if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false
 
-  const iterations = Number.parseInt(parts[1], 10)
-  if (!Number.isSafeInteger(iterations) || iterations < 100_000) return false
+  const iterations = storedPasswordHashIterations(stored)
+  if (iterations === null || iterations < MINIMUM_PASSWORD_HASH_ITERATIONS) return false
 
   try {
     const salt = hexToBytes(parts[2])
@@ -67,6 +103,12 @@ export async function verifyPassword(password: string, stored: string) {
   } catch {
     return false
   }
+}
+
+/** Rehash successful staging credentials at the production work factor later. */
+export function passwordHashNeedsUpgrade(stored: string, targetIterations: number) {
+  const iterations = storedPasswordHashIterations(stored)
+  return iterations !== null && iterations < targetIterations
 }
 
 export function createOpaqueToken(byteLength = 32) {

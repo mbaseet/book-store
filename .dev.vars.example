@@ -7,6 +7,10 @@ APP_BASE_URL=http://localhost:5173
 SESSION_SECRET=replace-with-at-least-32-random-characters
 ADMIN_BOOTSTRAP_TOKEN=replace-with-a-strong-random-token
 
+# Leave unset for normal local/production use. The isolated Free-plan staging
+# Worker sets a temporary lower value in wrangler.jsonc only.
+PASSWORD_HASH_ITERATIONS=
+
 CLOUDINARY_CLOUD_NAME=replace-with-cloud-name
 CLOUDINARY_API_KEY=replace-with-api-key
 CLOUDINARY_API_SECRET=replace-with-api-secret

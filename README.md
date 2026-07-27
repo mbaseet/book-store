@@ -130,6 +130,13 @@ Create the first staging administrator through the HTTPS `/admin` bootstrap
 screen with a unique password. Remove `ADMIN_BOOTSTRAP_TOKEN` from the staging
 Worker after bootstrap succeeds.
 
+The current Free-plan staging Worker temporarily sets
+`PASSWORD_HASH_ITERATIONS=5000` so PBKDF2 can complete inside Cloudflare's
+10 ms Free CPU limit. This is only acceptable while staging has no real
+customer data and must be removed after upgrading to Workers Paid. Production
+defaults to 150,000 iterations; a successful sign-in automatically rehashes a
+temporary staging credential at the stronger work factor.
+
 ## Cloudflare deployment checklist
 
 This application deploys as one full-stack **Cloudflare Worker with Static

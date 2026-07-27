@@ -16,7 +16,14 @@ import {
   ordersTable,
   passwordResetTokensTable,
 } from '../db/schema'
-import { hashPassword, hashToken, createOpaqueToken, verifyPassword } from '../lib/crypto'
+import {
+  createOpaqueToken,
+  hashPassword,
+  hashToken,
+  passwordHashIterations,
+  passwordHashNeedsUpgrade,
+  verifyPassword,
+} from '../lib/crypto'
 import { sendPasswordResetEmail } from '../lib/email'
 import { canonicalEmail, errorResponse, hasTrustedOrigin, parseJson } from '../lib/http'
 import { checkRateLimit, requestSubject } from '../lib/rate-limit'
@@ -41,6 +48,10 @@ function customerResponse(customer: { id: string; email: string; phone: string |
     phone: customer.phone,
     displayName: customer.displayName,
   }
+}
+
+function configuredPasswordHashIterations(env: Bindings) {
+  return passwordHashIterations(env.PASSWORD_HASH_ITERATIONS)
 }
 
 async function matchesBootstrapToken(env: Bindings, providedToken: string | undefined) {
@@ -89,7 +100,7 @@ authRoutes.post('/customer/register', async (context) => {
     .limit(1)
   if (existing) return errorResponse(context, 409, 'email_in_use', 'An account already uses this email address.')
 
-  const passwordHash = await hashPassword(parsed.data.password)
+  const passwordHash = await hashPassword(parsed.data.password, configuredPasswordHashIterations(context.env))
   const customer = {
     id: crypto.randomUUID(),
     email,
@@ -127,6 +138,14 @@ authRoutes.post('/customer/login', async (context) => {
     .limit(1)
   if (!customer || !(await verifyPassword(parsed.data.password, customer.passwordHash))) {
     return errorResponse(context, 401, 'invalid_credentials', 'Email or password is incorrect.')
+  }
+
+  const targetIterations = configuredPasswordHashIterations(context.env)
+  if (passwordHashNeedsUpgrade(customer.passwordHash, targetIterations)) {
+    await db
+      .update(customerAccountsTable)
+      .set({ passwordHash: await hashPassword(parsed.data.password, targetIterations), updatedAt: new Date() })
+      .where(eq(customerAccountsTable.id, customer.id))
   }
 
   await db
@@ -226,7 +245,7 @@ authRoutes.post('/customer/password-reset/confirm', async (context) => {
     return errorResponse(context, 400, 'invalid_reset_token', 'This reset link is invalid or has expired.')
   }
 
-  const passwordHash = await hashPassword(parsed.data.password)
+  const passwordHash = await hashPassword(parsed.data.password, configuredPasswordHashIterations(context.env))
   const now = new Date()
   await db.batch([
     db
@@ -265,6 +284,14 @@ authRoutes.post('/admin/login', async (context) => {
     return errorResponse(context, 401, 'invalid_credentials', 'Email or password is incorrect.')
   }
 
+  const targetIterations = configuredPasswordHashIterations(context.env)
+  if (passwordHashNeedsUpgrade(admin.passwordHash, targetIterations)) {
+    await db
+      .update(adminsTable)
+      .set({ passwordHash: await hashPassword(parsed.data.password, targetIterations), updatedAt: new Date() })
+      .where(eq(adminsTable.id, admin.id))
+  }
+
   await startAdminSession(context, db, admin.id)
   return context.json({ admin: { id: admin.id, email: admin.email } })
 })
@@ -290,7 +317,7 @@ authRoutes.post('/admin/bootstrap', async (context) => {
   const db = createDb(context.env)
   const id = crypto.randomUUID()
   const email = canonicalEmail(parsed.data.email)
-  const passwordHash = await hashPassword(parsed.data.password)
+  const passwordHash = await hashPassword(parsed.data.password, configuredPasswordHashIterations(context.env))
   const result = await context.env.DB
     .prepare(
       'INSERT INTO admins (id, email, password_hash) SELECT ?1, ?2, ?3 WHERE NOT EXISTS (SELECT 1 FROM admins)',

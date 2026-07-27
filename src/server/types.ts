@@ -10,6 +10,7 @@ export type Bindings = {
   DB: D1Database
   EMAIL_FROM: string
   ENVIRONMENT: 'development' | 'production'
+  PASSWORD_HASH_ITERATIONS?: string
   RESEND_API_KEY: string
   SESSION_SECRET: string
 }

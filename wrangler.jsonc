@@ -21,7 +21,8 @@
       "workers_dev": true,
       "vars": {
         "APP_BASE_URL": "https://personalized-storybooks-eg-staging.mint-meow.workers.dev",
-        "ENVIRONMENT": "production"
+        "ENVIRONMENT": "production",
+        "PASSWORD_HASH_ITERATIONS": "5000"
       },
       "d1_databases": [
         {
