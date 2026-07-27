@@ -113,11 +113,13 @@ export function StorefrontShell() {
               {menuOpen ? <X size={17} /> : <Menu size={17} />}
             </button>
             <button
-              className="hidden rounded-xl border border-[#0D7D78]/15 bg-white px-3 py-2 text-xs font-extrabold text-[#075f5b] transition hover:border-[#0D7D78]/45 sm:block"
+              className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-[#0D7D78]/15 bg-white px-2 text-xs font-extrabold text-[#075f5b] transition hover:border-[#0D7D78]/45 sm:px-3"
               type="button"
               onClick={() => switchLanguage(locale === 'ar' ? 'en' : 'ar')}
+              aria-label={text('التبديل إلى الإنجليزية', 'Switch to Arabic')}
             >
-              {locale === 'ar' ? 'English' : 'العربية'}
+              <span className="sm:hidden" aria-hidden="true">{locale === 'ar' ? 'EN' : 'AR'}</span>
+              <span className="hidden sm:inline">{locale === 'ar' ? 'English' : 'العربية'}</span>
             </button>
             <Link
               to={localizedPath('/checkout')}

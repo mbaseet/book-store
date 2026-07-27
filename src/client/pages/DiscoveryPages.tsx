@@ -89,7 +89,7 @@ export function HomePage() {
             <div className="relative min-h-[25rem] overflow-hidden rounded-[2.5rem] border border-[#9FD9C2]/35 bg-[#075f5b] p-6 shadow-2xl shadow-[#075f5b]/40 sm:min-h-[31rem]">
               <img src="/brand/mint-meow-logo-mint.png" alt="Mint Meow" className="absolute start-7 top-6 h-16 w-20 object-contain opacity-90 sm:h-20 sm:w-24" />
               <span className="absolute end-7 top-7 grid size-12 place-items-center rounded-2xl bg-[#FFD14D] text-[#075f5b] shadow-lg"><Gift size={22} /></span>
-              <img src="/brand/mint-reading.png" alt="Mint reading a book" className="mint-float absolute bottom-[-5%] start-1/2 h-[90%] w-auto max-w-none -translate-x-1/2 object-contain" />
+              <img src="/brand/mint-reading.png" alt="Mint reading a book" className="mint-float absolute bottom-[-5%] left-1/2 h-[90%] w-auto max-w-none -translate-x-1/2 object-contain" />
               <div className="absolute bottom-6 start-6 end-6 rounded-2xl bg-[#FAF8F3]/95 p-4 text-[#075f5b] shadow-lg sm:start-auto sm:w-56"><p className="text-xs font-black uppercase tracking-[.12em] text-[#0D7D78]">{text('هدية اليوم', 'Today’s little joy')}</p><p className="mt-1 text-sm font-bold leading-5">{text('اختَر شيئًا سيحبونه ويحتفظون به.', 'Pick something they will love and keep.')}</p></div>
             </div>
           </div>
@@ -98,7 +98,7 @@ export function HomePage() {
 
       <section className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20">
         <div className="mb-8 flex items-end justify-between gap-4"><div><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('أشياء محبوبة', 'Made to be loved')}</p><h2 className="mint-heading mt-2 text-3xl tracking-tight text-[#075f5b] sm:text-4xl">{text('اختيارات صغيرة تفتح عالمًا كبيرًا', 'Small picks, big worlds')}</h2></div><Link className="hidden items-center gap-1 text-sm font-black text-[#0D7D78] sm:inline-flex" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')} <ArrowLeft size={16} /></Link></div>
-        {productsQuery.isLoading ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map((key) => <div key={key} className="h-72 animate-pulse rounded-[1.75rem] bg-[#9FD9C2]/25" />)}</div> : featuredProducts.length > 0 ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{featuredProducts.slice(0, 3).map((product) => <ProductCardView key={product.id} product={product} />)}</div> : <EmptyProducts />}
+        {productsQuery.isLoading ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3, 4, 5, 6].map((key) => <div key={key} className="h-72 animate-pulse rounded-[1.75rem] bg-[#9FD9C2]/25" />)}</div> : featuredProducts.length > 0 ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{featuredProducts.map((product) => <ProductCardView key={product.id} product={product} />)}</div> : <EmptyProducts />}
         <Link className="mt-7 inline-flex items-center gap-1 text-sm font-black text-[#0D7D78] sm:hidden" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')} <ArrowLeft size={16} /></Link>
       </section>
 

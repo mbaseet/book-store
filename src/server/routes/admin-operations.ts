@@ -29,6 +29,13 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+// Governorates are bootstrap records with stable opaque IDs such as
+// `gov-cairo`, while newly created records elsewhere use UUIDs. The database
+// query remains parameterized; this only rejects malformed route parameters.
+export function isGovernorateId(value: string) {
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value)
+}
+
 function translationPair<T extends LocaleRow>(translations: T[]) {
   const ar = translations.find((translation) => translation.locale === 'ar')
   const en = translations.find((translation) => translation.locale === 'en')
@@ -144,7 +151,7 @@ adminOperationsRoutes.put('/admin/governorates/:id', async (context) => {
   const admin = await requireAdmin(context)
   if (!admin) return errorResponse(context, 401, 'not_authenticated', 'Please sign in to continue.')
   const id = context.req.param('id')
-  if (!isUuid(id)) return errorResponse(context, 404, 'governorate_not_found', 'The governorate was not found.')
+  if (!isGovernorateId(id)) return errorResponse(context, 404, 'governorate_not_found', 'The governorate was not found.')
   const parsed = await parseJson(context, updateGovernorateSchema)
   if (!parsed.success) return parsed.response
 
