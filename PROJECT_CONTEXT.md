@@ -155,18 +155,22 @@ Read this file before changing checkout, payments, retention, or scope.
 
 ## Open items before production launch
 
-Staging status as of 2026-07-27: the isolated Cloudflare Worker and D1 database
-are deployed at
-<https://personalized-storybooks-eg-staging.mint-meow.workers.dev>. All schema
-migrations and the bootstrap seed are applied, encrypted Cloudinary/session
-secrets are configured, preview URLs are disabled, and the deployed private
-upload smoke test passes. Because the current account is on Workers Free,
-staging temporarily uses a 5,000-iteration PBKDF2 work factor solely to create
-test credentials inside the 10 ms CPU limit; it must be removed after upgrading
-to Workers Paid. Production Cloudflare resources are not provisioned.
-The first staging administrator has been created through the HTTPS bootstrap
-flow, and the one-time staging bootstrap secret has been removed from the
-Worker.
+Staging status as of 2026-07-29: the canonical remote test environment is the
+`m.baseeto` Cloudflare staging Worker and D1 database at
+<https://personalized-storybooks-eg-staging.m-baseeto.workers.dev>. It receives
+only the approved storefront setup and administrator migration; customer
+accounts, orders, sessions, rate limits, drafts, uploads, private media, and
+other order-related data remain outside it. Localhost uses an isolated local
+D1 database and is not a view of this staging target.
+
+The older `personalized-storybooks-eg.m-baseeto.workers.dev` Worker and the
+former `personalized-storybooks-eg-staging.mint-meow.workers.dev` Worker remain
+untouched as recovery references only; neither is an active test or deployment
+target. The canonical staging Worker temporarily uses a 5,000-iteration PBKDF2
+work factor solely because it is on Workers Free. Remove that exception after
+upgrading to Workers Paid. Production Cloudflare resources remain
+unprovisioned, and no production rollout may begin until that upgrade and a
+separate approval are complete.
 
 1. Confirm the internal process for reviewing InstaPay and mobile-wallet
    payment proofs before production begins.
@@ -181,11 +185,13 @@ Worker.
    effective dates; replace the placeholders in the policy drafts.
 6. Obtain Egyptian legal review of Terms, Returns, and Privacy Policy before
    publishing the production storefront.
-7. Configure deployment secrets and services: Cloudflare/D1, Cloudinary,
-   SESSION_SECRET, ADMIN_BOOTSTRAP_TOKEN, production APP_BASE_URL, and Resend
-   if password-reset emails should be sent in production.
-8. Create the first admin account through the bootstrap flow, then configure
-   governorate fees and manual payment details from Admin.
+7. For a separately approved production rollout, configure production
+   Cloudflare/D1 resources, Cloudinary, SESSION_SECRET,
+   ADMIN_BOOTSTRAP_TOKEN, production APP_BASE_URL, and Resend if
+   password-reset emails should be sent in production.
+8. After a future new production database is provisioned, create its first
+   admin account through the bootstrap flow, then configure governorate fees
+   and manual payment details from Admin.
 9. Perform staging tests of real upload, manual-transfer, scheduled-cleanup,
    mobile payment-link, report totals, and order-review flows using
    non-sensitive test data.

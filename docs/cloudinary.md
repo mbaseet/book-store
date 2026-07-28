@@ -62,16 +62,23 @@ Set Cloudinary values on each Worker environment independently. Treat
 identifiers that may be configured as Worker variables, although keeping all
 three in the deployment secret manager is acceptable.
 
-The current staging Worker is:
+The sole active Cloudinary test target is the canonical `m.baseeto` staging
+Worker:
 
-<https://personalized-storybooks-eg-staging.mint-meow.workers.dev>
+<https://personalized-storybooks-eg-staging.m-baseeto.workers.dev>
 
 Its Cloudinary values are stored as encrypted Worker secrets. Verify the
 deployed signing path after every credential rotation or upload-policy change:
 
 ```sh
-SMOKE_BASE_URL=https://personalized-storybooks-eg-staging.mint-meow.workers.dev pnpm smoke:cloudinary
+SMOKE_BASE_URL=https://personalized-storybooks-eg-staging.m-baseeto.workers.dev pnpm smoke:cloudinary
 ```
+
+The old `personalized-storybooks-eg.m-baseeto.workers.dev` Worker and former
+`personalized-storybooks-eg-staging.mint-meow.workers.dev` staging Worker are
+recovery references only. Do not use their Cloudinary settings or URLs for
+smoke tests. Localhost instead uses the isolated local D1 setup and local
+credentials from `.dev.vars`.
 
 The Vite plugin writes an ignored `.dev.vars` copy under `dist/` for local
 previewing. It is outside the static asset directory and is not deployed, but

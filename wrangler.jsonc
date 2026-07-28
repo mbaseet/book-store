@@ -17,10 +17,11 @@
   ],
   "env": {
     "staging": {
+      "account_id": "c8aea16544af3ad32a67f6c3e0217755",
       "preview_urls": false,
       "workers_dev": true,
       "vars": {
-        "APP_BASE_URL": "https://personalized-storybooks-eg-staging.mint-meow.workers.dev",
+        "APP_BASE_URL": "https://personalized-storybooks-eg-staging.m-baseeto.workers.dev",
         "ENVIRONMENT": "production",
         "PASSWORD_HASH_ITERATIONS": "5000"
       },
@@ -28,7 +29,7 @@
         {
           "binding": "DB",
           "database_name": "personalized-storybooks-eg-staging-db",
-          "database_id": "199de385-a579-419a-bc84-675ee17a6f7c",
+          "database_id": "7eab0c22-b9de-4f0f-842e-8f9c1d8f5cb8",
           "migrations_dir": "drizzle"
         }
       ],

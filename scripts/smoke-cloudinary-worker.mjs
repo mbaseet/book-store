@@ -229,7 +229,7 @@ async function main() {
   }
 
   if (cleanupFailure) {
-    console.error(`Automatic cleanup failed. Delete this synthetic asset manually: ${publicId}`)
+    console.error('Automatic cleanup failed. A synthetic private test asset may require manual removal.')
     if (!failure) failure = cleanupFailure
   }
   if (failure) throw failure

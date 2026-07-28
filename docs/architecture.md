@@ -19,6 +19,20 @@ This retains the reference project's React + Vite + Tailwind, Hono + Workers,
 Drizzle + D1, and Cloudinary approach without carrying across its business
 logic.
 
+## Deployment environments
+
+- Local development uses an isolated local D1 database. Localhost never reads
+  from or writes to a remote Worker database.
+- The sole active remote test target is the canonical `m.baseeto` staging
+  Worker at
+  <https://personalized-storybooks-eg-staging.m-baseeto.workers.dev>, backed by
+  `personalized-storybooks-eg-staging-db`.
+- The old `personalized-storybooks-eg.m-baseeto.workers.dev` Worker and former
+  `personalized-storybooks-eg-staging.mint-meow.workers.dev` staging Worker are
+  recovery references only and must not receive deployments or test data.
+- Production resources are intentionally unprovisioned. A Workers upgrade and
+  separate production rollout approval are required before creating them.
+
 ## Store-specific boundaries
 
 - Customer checkout is guest-first. Email/password accounts are optional and
