@@ -39,12 +39,13 @@ Drizzle, and D1 on the server.
   deletion 30 days after delivery or cancellation.
 - Six initial bilingual story collections and editable Arabic/English draft
   terms, returns, and privacy pages.
-- Phase 2 (implemented locally, pending its own staging rollout): a minimal
-  encrypted 30-day saved-cart follow-up queue triggered only after eligible
-  delivery contact details are entered and checkout expires, plus
-  consent-gated GTM/GA4/Meta/TikTok provider IDs. Raw header code is not
-  accepted. Recovery excludes child/recipient details, personalization,
-  photos, full address, payment proof, notes, drafts, and promo text.
+- Phase 2 is deployed to the canonical staging Worker: a minimal encrypted
+  30-day saved-cart follow-up queue triggered only after eligible delivery
+  contact details are entered and checkout expires, plus consent-gated
+  GTM/GA4/Meta/TikTok provider IDs. Raw header code is not accepted. Recovery
+  excludes child/recipient details, personalization, photos, full address,
+  payment proof, notes, drafts, and promo text. Production remains
+  unprovisioned.
 - Mint Meow’s approved visual reference is stored at
   `docs/brand/mint-meow-visual-reference.pdf`. Reusable logo and mascot assets
   are in `public/brand/`; use these rather than the previous brown/pink
@@ -146,7 +147,8 @@ target:
 - URL: <https://personalized-storybooks-eg-staging.m-baseeto.workers.dev>
 
 It contains only the curated storefront setup and administrator migration.
-Phase 2 is not yet applied there. Do not copy or test with customer accounts,
+Phase 2 migration `0006_abandoned_checkout_recovery` is now applied there, and
+the recovery secret is configured. Do not copy or test with customer accounts,
 orders, sessions, drafts, rate limits, uploads, or private media there. Run
 `pnpm db:migrate:staging` only as a reviewed schema operation; do not run a
 bootstrap or demo seed remotely.
@@ -155,12 +157,9 @@ Deploy only with `pnpm deploy:staging`. Its preflight checks the canonical
 Cloudflare account, Worker, D1 binding, and URL before it publishes the
 generated staging configuration. Never run the local demo seed remotely.
 
-Keep `SESSION_SECRET` and all three Cloudinary values as staging Worker
-secrets. Phase 2 additionally requires a fresh
-`ABANDONED_CART_ENCRYPTION_SECRET` before recovery can create encrypted leads;
-never rotate it during its 30-day lead retention window. Apply the reviewed
-`0006` migration successfully before deploying a Worker that reads its
-recovery table or `checkout_drafts.consumed_at`. `ADMIN_BOOTSTRAP_TOKEN` is
+Keep `SESSION_SECRET`, all three Cloudinary values, and the fresh
+`ABANDONED_CART_ENCRYPTION_SECRET` as staging Worker secrets; never rotate the
+recovery secret while its 30-day leads remain. `ADMIN_BOOTSTRAP_TOKEN` is
 deliberately not configured because the migrated administrator account already
 exists. After deployment, run:
 

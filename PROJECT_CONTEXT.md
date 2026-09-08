@@ -249,12 +249,13 @@ separate approval are complete.
 10. Configure customer support phone, email, WhatsApp, business hours,
     delivery/payment guidance, announcement-bar copy, and SEO/social defaults
     in Admin before launch.
-11. Phase 2 remains local and un-deployed as of 2026-07-31. Before a separate
-    staging rollout, apply migration `0006_abandoned_checkout_recovery` first,
-    set a fresh `ABANDONED_CART_ENCRYPTION_SECRET`, verify the built-in Privacy
-    disclosure and tracking-consent controls, then test recovery with
-    non-sensitive data. Do not enable provider IDs or recovery outreach before
-    that review.
+11. Phase 2 was deployed to canonical staging on 2026-09-08 after applying
+    migration `0006_abandoned_checkout_recovery`, setting a fresh
+    `ABANDONED_CART_ENCRYPTION_SECRET`, and verifying the deployed Cloudinary
+    smoke path. Continue to test recovery with non-sensitive data and review
+    the built-in Privacy disclosure and tracking-consent controls before
+    production. Do not enable provider IDs or recovery outreach without that
+    review.
 
 ## Change-management notes
 
