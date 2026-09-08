@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import {
   announcementBarSchema,
   editablePageKeySchema,
+  trackingSettingsSchema,
   updateContentPageSchema,
   updateStoreSettingsSchema,
 } from '@shared/contracts/content'
@@ -30,6 +31,7 @@ const managedSettings = new Set([
   'payment_guidance',
   'announcement_bar',
   'seo_defaults',
+  'tracking_settings',
 ])
 
 function serializePaymentDetails(
@@ -75,6 +77,13 @@ function parseSeoDefaults(value: string | null | undefined) {
     description: stringOrNull(parsed.description),
     ogImageUrl: stringOrNull(parsed.ogImageUrl),
   }
+}
+
+function parseTrackingSettings(value: string | null | undefined) {
+  const parsed = trackingSettingsSchema.safeParse(parseJsonObject(value))
+  return parsed.success
+    ? parsed.data
+    : { gtmContainerId: null, ga4MeasurementId: null, metaPixelId: null, tiktokPixelId: null }
 }
 
 export const adminContentRoutes = new Hono<AppEnvironment>()
@@ -180,6 +189,7 @@ adminContentRoutes.get('/admin/settings', async (context) => {
       paymentGuidance: values.get('payment_guidance') ?? null,
       announcementBar: parseAnnouncementBar(values.get('announcement_bar')),
       seoDefaults: parseSeoDefaults(values.get('seo_defaults')),
+      tracking: parseTrackingSettings(values.get('tracking_settings')),
     },
   })
 })
@@ -221,6 +231,9 @@ adminContentRoutes.put('/admin/settings', async (context) => {
       key: 'seo_defaults',
       value: parsed.data.seoDefaults === null ? null : JSON.stringify(parsed.data.seoDefaults),
     })
+  }
+  if ('tracking' in parsed.data) {
+    values.push({ key: 'tracking_settings', value: JSON.stringify(parsed.data.tracking) })
   }
 
   if (values.length === 0) return context.json({ saved: true })

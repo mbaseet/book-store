@@ -72,6 +72,42 @@ const seoDefaultsSchema = z.object({
   ogImageUrl: z.string().trim().url().max(2_000).nullable().optional(),
 })
 
+// These are public identifiers, not secrets. Keep the accepted syntax narrow
+// so settings can only be used to construct the known provider URLs below;
+// arbitrary script, HTML, or URL injection is intentionally unsupported.
+const gtmContainerIdSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^GTM-[A-Z0-9]{4,20}$/, 'Use a GTM container ID such as GTM-ABC1234.')
+
+const ga4MeasurementIdSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^G-[A-Z0-9]{4,20}$/, 'Use a GA4 measurement ID such as G-ABC1234.')
+
+const metaPixelIdSchema = z
+  .string()
+  .trim()
+  .regex(/^[1-9][0-9]{4,19}$/, 'Use a numeric Meta Pixel ID.')
+
+const tiktokPixelIdSchema = z
+  .string()
+  .trim()
+  .regex(/^C[A-Za-z0-9]{4,31}$/, 'Use a TikTok Pixel ID beginning with C.')
+
+export const trackingSettingsSchema = z
+  .object({
+    gtmContainerId: gtmContainerIdSchema.nullable(),
+    ga4MeasurementId: ga4MeasurementIdSchema.nullable(),
+    metaPixelId: metaPixelIdSchema.nullable(),
+    tiktokPixelId: tiktokPixelIdSchema.nullable(),
+  })
+  .strict()
+
+export type TrackingSettings = z.infer<typeof trackingSettingsSchema>
+
 export const updateStoreSettingsSchema = z.object({
   brandName: z.string().trim().min(1).max(80).nullable().optional(),
   whatsappUrl: z.string().trim().url().max(500).nullable().optional(),
@@ -84,4 +120,5 @@ export const updateStoreSettingsSchema = z.object({
   paymentGuidance: optionalTextSchema(3_000),
   announcementBar: announcementBarSchema.nullable().optional(),
   seoDefaults: seoDefaultsSchema.nullable().optional(),
-})
+  tracking: trackingSettingsSchema.optional(),
+}).strict()

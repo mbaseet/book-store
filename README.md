@@ -13,11 +13,16 @@ Drizzle, and D1 on the server.
   personalization on per product, then simply enables the fixed child name,
   age (0–18), gender (Boy/Girl), one-or-two private photos, and optional note
   fields. There is no arbitrary customer HTML or price-changing form logic.
-- Manual InstaPay and generic Mobile Wallet proof submission, with an
-  exact server-calculated total shown before the customer transfers. Only
-  methods with real configured instructions are displayed; the bootstrap
-  configuration enables InstaPay, its mobile payment link, and a Mobile
-  Wallet that accepts Vodafone Cash, Orange Money, WE Pay, or Etisalat Cash.
+- Three honest manual-payment paths, all calculated server-side: full upfront
+  payment, a personalized-product 50% deposit plus COD, or ready-only COD.
+  Full-upfront InstaPay receives a quiet 5% merchandise discount after any
+  promo (capped at 30 EGP and excluding shipping); deposits receive no
+  InstaPay discount. InstaPay and generic Mobile Wallet transfers require
+  proof, while ready-only COD has no proof or deposit.
+- A shorter delivery form asks for recipient name, required phone,
+  governorate, city/area, and address details; email is optional. COD orders
+  are held for admin confirmation before fulfilment, and Admin records actual
+  payment/deposit/COD collection separately from order value.
 - An encrypted, browser-bound server checkout draft retains the saved story
   and delivery form for up to 60 minutes after the customer continues. Payment
   screenshots are deliberately not retained or resumed.
@@ -34,6 +39,12 @@ Drizzle, and D1 on the server.
   deletion 30 days after delivery or cancellation.
 - Six initial bilingual story collections and editable Arabic/English draft
   terms, returns, and privacy pages.
+- Phase 2 (implemented locally, pending its own staging rollout): a minimal
+  encrypted 30-day saved-cart follow-up queue triggered only after eligible
+  delivery contact details are entered and checkout expires, plus
+  consent-gated GTM/GA4/Meta/TikTok provider IDs. Raw header code is not
+  accepted. Recovery excludes child/recipient details, personalization,
+  photos, full address, payment proof, notes, drafts, and promo text.
 - Mint Meow’s approved visual reference is stored at
   `docs/brand/mint-meow-visual-reference.pdf`. Reusable logo and mascot assets
   are in `public/brand/`; use these rather than the previous brown/pink
@@ -93,6 +104,21 @@ and governorate changes through Admin or an explicit, reviewed migration.
 Password-reset emails require Resend credentials in production; local
 development logs a reset URL when mail settings are absent.
 
+### Saved-cart recovery (Phase 2)
+
+To exercise recovery locally, add a distinct 32+ character
+`ABANDONED_CART_ENCRYPTION_SECRET` to `.dev.vars`, then run the normal local
+migrations. Once eligible delivery contact details are entered, an incomplete
+checkout becomes eligible for a minimal recovery snapshot only after its
+60-minute draft expires; the snapshot is retained for 30 days. Do not rotate
+this secret while any retained recovery leads exist, because that would make
+those encrypted records unreadable.
+
+The Admin **Saved carts** view is manual follow-up only. It deliberately has
+no automatic email/SMS/WhatsApp sending and no child data, photos, full
+address, payment proof, notes, or draft data. The built-in Privacy page
+contains the mandatory disclosure and a persistent analytics preference link.
+
 ## First administrator on a brand-new database
 
 For a new, empty database only, set a strong, random
@@ -119,18 +145,24 @@ target:
 - D1: `personalized-storybooks-eg-staging-db`
 - URL: <https://personalized-storybooks-eg-staging.m-baseeto.workers.dev>
 
-It contains only the curated storefront setup and administrator migration. Do
-not copy or test with customer accounts, orders, sessions, drafts, rate limits,
-uploads, or private media there. Run `pnpm db:migrate:staging` only as a
-reviewed schema operation; do not run a bootstrap or demo seed remotely.
+It contains only the curated storefront setup and administrator migration.
+Phase 2 is not yet applied there. Do not copy or test with customer accounts,
+orders, sessions, drafts, rate limits, uploads, or private media there. Run
+`pnpm db:migrate:staging` only as a reviewed schema operation; do not run a
+bootstrap or demo seed remotely.
 
 Deploy only with `pnpm deploy:staging`. Its preflight checks the canonical
 Cloudflare account, Worker, D1 binding, and URL before it publishes the
 generated staging configuration. Never run the local demo seed remotely.
 
 Keep `SESSION_SECRET` and all three Cloudinary values as staging Worker
-secrets. `ADMIN_BOOTSTRAP_TOKEN` is deliberately not configured because the
-migrated administrator account already exists. After deployment, run:
+secrets. Phase 2 additionally requires a fresh
+`ABANDONED_CART_ENCRYPTION_SECRET` before recovery can create encrypted leads;
+never rotate it during its 30-day lead retention window. Apply the reviewed
+`0006` migration successfully before deploying a Worker that reads its
+recovery table or `checkout_drafts.consumed_at`. `ADMIN_BOOTSTRAP_TOKEN` is
+deliberately not configured because the migrated administrator account already
+exists. After deployment, run:
 
 ```sh
 SMOKE_BASE_URL=https://personalized-storybooks-eg-staging.m-baseeto.workers.dev pnpm smoke:cloudinary
@@ -167,8 +199,9 @@ After those approvals, the rollout checklist is:
    only for a brand-new database, run `pnpm db:seed:remote:bootstrap` once.
    Never run the demo-order seed remotely.
 3. Set Worker secrets for `SESSION_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`,
-   Cloudinary, and Resend. Put only non-sensitive runtime configuration such
-   as `APP_BASE_URL` and `ENVIRONMENT=production` in Worker variables.
+   `ABANDONED_CART_ENCRYPTION_SECRET`, Cloudinary, and Resend. Put only
+   non-sensitive runtime configuration such as `APP_BASE_URL` and
+   `ENVIRONMENT=production` in Worker variables.
 4. Deploy the Worker with the separately approved production deployment
    procedure, using its initial `workers.dev` URL as `APP_BASE_URL` until the
    production domain is connected.
@@ -187,10 +220,8 @@ deadline.
 - `src/server` — Worker, Hono routes, server-side services, and security.
 - `src/shared` — Zod API contracts and shared constants.
 - `drizzle` — D1 migration history.
-- `PROJECT_CONTEXT.md` — final business decisions, phase-1 exclusions, and
+- `PROJECT_CONTEXT.md` — final business decisions, approved phase boundaries, and
   launch open items; read this first when continuing the project.
 - `docs/architecture.md` — architecture and security rationale.
 - `docs/brand/mint-meow-visual-reference.pdf` — canonical visual reference for
   the current Mint Meow brand implementation.
-
-force update

@@ -6,6 +6,7 @@ import { getCategories, getProducts, getSettings, getTestimonials, type ProductC
 import { formatMoney } from '../lib/format'
 import { useStoreLocale } from '../lib/locale'
 import { MintCompanion } from '../components/MintCompanion'
+import { EyebrowBanner } from '../components/EyebrowBanner'
 
 function ProductCardView({ product }: { product: ProductCard }) {
   const { locale, localizedPath, text } = useStoreLocale()
@@ -96,6 +97,8 @@ export function HomePage() {
         </div>
       </section>
 
+      <EyebrowBanner priority className="py-10 sm:py-14" />
+
       <section className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20">
         <div className="mb-8 flex items-end justify-between gap-4"><div><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('أشياء محبوبة', 'Made to be loved')}</p><h2 className="mint-heading mt-2 text-3xl tracking-tight text-[#075f5b] sm:text-4xl">{text('اختيارات صغيرة تفتح عالمًا كبيرًا', 'Small picks, big worlds')}</h2></div><Link className="hidden items-center gap-1 text-sm font-black text-[#0D7D78] sm:inline-flex" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')} <ArrowLeft size={16} /></Link></div>
         {productsQuery.isLoading ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3, 4, 5, 6].map((key) => <div key={key} className="h-72 animate-pulse rounded-[1.75rem] bg-[#9FD9C2]/25" />)}</div> : featuredProducts.length > 0 ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{featuredProducts.map((product) => <ProductCardView key={product.id} product={product} />)}</div> : <EmptyProducts />}
@@ -106,7 +109,46 @@ export function HomePage() {
         <div className="mx-auto max-w-7xl px-5 sm:px-8"><div className="mb-8 max-w-2xl"><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('اكتشف عالم مِنت', 'Explore Mint’s world')}</p><h2 className="mint-heading mt-2 text-3xl tracking-tight text-[#075f5b] sm:text-4xl">{text('هناك شيء جديد لكل فضول صغير', 'Something new for every little curiosity')}</h2></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{families.map(({ Icon, ...family }) => <Link key={family.title} to={localizedPath('/stories')} className={`group relative min-h-72 overflow-hidden rounded-[1.75rem] p-6 transition hover:-translate-y-1 ${family.tone}`}><Icon size={22} className="opacity-75" /><h3 className="mt-10 max-w-[10rem] text-2xl font-black leading-tight">{family.title}</h3><p className="mt-2 max-w-[9rem] text-sm font-semibold opacity-75">{family.copy}</p><img src={family.image} alt="" className="absolute -bottom-4 -end-9 h-48 w-auto transition duration-300 group-hover:scale-105" /><ArrowUpRight className="absolute bottom-5 start-6" size={19} /></Link>)}</div><MintCompanion pose="peek" tone="cream" className="mt-6 max-w-md" eyebrow={text('مِنت تقول', 'Mint says')} message={text('اختاري ما يشبه عالمهم — وأنا سأساعدك في الباقي!', 'Choose what feels like their world — I’ll help with the rest!')} /></div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20"><div className="grid gap-8 overflow-hidden rounded-[2rem] bg-[#0D7D78] px-7 py-9 text-[#FAF8F3] sm:px-10 lg:grid-cols-[.8fr_1.2fr] lg:items-center"><div><p className="text-sm font-black uppercase tracking-[.14em] text-[#FFD14D]">{text('بسيطة جدًا', 'Made simple')}</p><h2 className="mint-heading mt-3 text-3xl leading-tight sm:text-4xl">{text('هدية لها معنى، في خطوات سهلة.', 'A meaningful gift, in a few easy steps.')}</h2><Link className="mint-cta mt-6 inline-flex rounded-2xl px-5 py-3" to={localizedPath('/how-it-works')}>{text('اعرف المزيد', 'See how it works')}</Link></div><div className="grid gap-3 sm:grid-cols-3">{[[text('اختره', 'Pick it'), text('اختَر منتجًا جاهزًا أو قابلًا للتخصيص.', 'Choose ready-to-ship or personalize it.')], [text('اجعله لهم', 'Make it theirs'), text('أضف التفاصيل عندما يحتاجها المنتج.', 'Add details only when the product asks.')], [text('نصنع فرحتهم', 'Make a moment'), text('سنجهّزه بحب ليصل إلى بابك.', 'We prepare it with love for their door.')]].map(([title, copy], index) => <div key={title} className="rounded-2xl bg-[#FAF8F3]/10 p-5"><span className="grid size-8 place-items-center rounded-xl bg-[#FFD14D] text-sm font-black text-[#075f5b]">{index + 1}</span><h3 className="mt-5 font-black">{title}</h3><p className="mt-2 text-sm leading-6 text-[#FAF8F3]/72">{copy}</p></div>)}</div></div></section>
+      <section className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20">
+        <div className="grid gap-8 overflow-hidden rounded-[2rem] bg-[#0D7D78] px-7 py-9 text-[#FAF8F3] sm:px-10 lg:grid-cols-[.7fr_1.3fr] lg:items-center">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[.14em] text-[#FFD14D]">{text('بسيطة جدًا', 'Made simple')}</p>
+            <h2 className="mint-heading mt-3 text-3xl leading-tight sm:text-4xl">{text('هدية لها معنى، في خطوات سهلة.', 'A meaningful gift, in a few easy steps.')}</h2>
+            <Link className="mint-cta mt-6 inline-flex rounded-2xl px-5 py-3" to={localizedPath('/how-it-works')}>{text('اعرف المزيد', 'See how it works')}</Link>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                title: text('اختره', 'Pick it'),
+                copy: text('اختَر منتجًا جاهزًا أو قابلًا للتخصيص.', 'Choose ready-to-ship or personalize it.'),
+                image: '/brand/how-it-works-choose.png',
+                imageAlt: text('ثلاثة عوالم من مِنت للاختيار بينها', 'Three Mint worlds to choose from'),
+              },
+              {
+                title: text('اجعله لهم', 'Make it theirs'),
+                copy: text('أضف التفاصيل عندما يحتاجها المنتج.', 'Add details only when the product asks.'),
+                image: '/brand/how-it-works-personalize.png',
+                imageAlt: text('ارفع صورة وابدأ تخصيص هديتك', 'Upload a photo to personalize your gift'),
+              },
+              {
+                title: text('نصنع فرحتهم', 'Make a moment'),
+                copy: text('سنجهّزه بحب ليصل إلى بابك.', 'We prepare it with love for their door.'),
+                image: '/brand/how-it-works-finish.png',
+                imageAlt: text('كتاب مِنت جاهز ليصنع لحظة جميلة', 'A Mint storybook ready to make a beautiful moment'),
+              },
+            ].map((step, index) => (
+              <div key={step.title} className="rounded-2xl bg-[#FAF8F3]/10 p-3 sm:p-4">
+                <div className="rounded-xl bg-[#FAF8F3]/95 p-1">
+                  <img src={step.image} alt={step.imageAlt} className="mx-auto h-28 w-full object-contain sm:h-32" loading="lazy" />
+                </div>
+                <span className="mt-4 grid size-8 place-items-center rounded-xl bg-[#FFD14D] text-sm font-black text-[#075f5b]">{index + 1}</span>
+                <h3 className="mt-4 font-black">{step.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-[#FAF8F3]/72">{step.copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {testimonials.length > 0 ? <section className="mx-auto max-w-7xl px-5 pb-16 sm:px-8"><div className="mb-7"><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('من عائلاتنا', 'From our families')}</p><h2 className="mt-2 text-3xl font-black tracking-tight text-[#075f5b]">{text('لحظات يحبونها', 'Little moments they love')}</h2></div><div className="grid gap-4 md:grid-cols-3">{testimonials.slice(0, 3).map((testimonial) => <figure key={testimonial.id} className="rounded-[1.75rem] border border-[#0D7D78]/10 bg-white p-6 shadow-sm"><blockquote className="text-xl font-bold leading-8 text-[#175451]">“{testimonial.quote}”</blockquote><figcaption className="mt-5 text-sm font-black text-[#0D7D78]">— {testimonial.displayName}</figcaption></figure>)}</div></section> : null}
     </main>

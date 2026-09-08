@@ -127,6 +127,7 @@ export async function loadCheckoutProducts(
     return [
       {
         ...product,
+        isPersonalized: product.personalizationDefinition !== null,
         title: translation.title,
         imageUrl: imageByProduct.get(product.id) ?? null,
         addons: (addonsByProduct.get(product.id) ?? []).flatMap((addon) => {

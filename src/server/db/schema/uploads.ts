@@ -16,11 +16,18 @@ export const checkoutDraftsTable = sqliteTable(
     // A small compare-and-swap counter prevents overlapping browser saves or
     // tabs from silently replacing a newer encrypted draft payload.
     revision: integer('revision').notNull().default(0),
+    // Written atomically with the order insert. If asynchronous cleanup ever
+    // fails, this marker prevents a completed checkout from being promoted as
+    // an abandoned-cart lead during the remaining 60-minute draft lifetime.
+    consumedAt: integer('consumed_at', { mode: 'timestamp_ms' }),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
-  (table) => [index('checkout_drafts_expiry_idx').on(table.expiresAt)],
+  (table) => [
+    index('checkout_drafts_expiry_idx').on(table.expiresAt),
+    index('checkout_drafts_consumed_expiry_idx').on(table.consumedAt, table.expiresAt),
+  ],
 )
 
 /**

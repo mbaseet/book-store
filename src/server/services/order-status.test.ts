@@ -4,6 +4,8 @@ import { canTransitionOrderStatus, isTerminalOrderStatus } from './order-status'
 describe('order status transitions', () => {
   it('only permits the operational lifecycle', () => {
     expect(canTransitionOrderStatus('payment_submitted', 'payment_confirmed')).toBe(true)
+    expect(canTransitionOrderStatus('cod_pending_confirmation', 'in_production')).toBe(true)
+    expect(canTransitionOrderStatus('cod_pending_confirmation', 'payment_confirmed')).toBe(false)
     expect(canTransitionOrderStatus('payment_submitted', 'shipped')).toBe(false)
     expect(canTransitionOrderStatus('shipped', 'delivered')).toBe(true)
     expect(canTransitionOrderStatus('delivered', 'shipped')).toBe(false)

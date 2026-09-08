@@ -18,7 +18,7 @@ export type ApiErrorBody = {
 
 export function errorResponse(
   context: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500,
+  status: 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 503,
   code: string,
   message: string,
   fieldErrors?: ApiFieldError[],

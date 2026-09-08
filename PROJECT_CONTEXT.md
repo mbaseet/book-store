@@ -64,8 +64,12 @@ Read this file before changing checkout, payments, retention, or scope.
   fields, or field-based pricing.
 - There are exactly two customer-facing checkout steps:
   1. Customize the story.
-  2. Enter delivery details, see the final total, make a manual transfer, and
-     upload payment proof.
+  2. Enter delivery details, choose a payment plan, and see the exact
+     server-calculated amount due now and, where applicable, on delivery.
+- The conversion-focused delivery contract collects: recipient full name,
+  required phone, governorate, city/area, and one address-details field. Email
+  is optional. Older stored address lines remain supported internally, but are
+  not exposed as extra customer form fields.
 - The legacy /cart URL redirects to checkout; it must not become a third
   conversion step.
 - Guest checkout comes first. Customers may optionally create a standard
@@ -84,13 +88,48 @@ Read this file before changing checkout, payments, retention, or scope.
 - The browser does not persist child-photo claim tokens, child data, or
   delivery data in local or session storage. It only holds short-lived UI
   state; the actual draft is server-side and identified by an HTTP-only cookie.
+- Phase 2 saved-cart recovery starts only after eligible delivery contact
+  details have been entered and the 60-minute checkout draft expires. It then
+  retains an encrypted, 30-day recovery snapshot containing phone, optional
+  email, governorate/city, selected payment choice, and a public
+  product/add-on summary. It excludes the recipient/child name, all
+  personalization, photos, full address, notes, payment proof, draft token,
+  media IDs/URLs, and promo text. It supports only manual phone/email
+  follow-up from Admin; it sends no automatic messages.
+- A completed checkout marks its source draft as consumed in the order batch,
+  so a cleanup retry can never create a false abandoned lead. Recovery records
+  are encrypted with `ABANDONED_CART_ENCRYPTION_SECRET`, use a keyed phone HMAC
+  for post-order suppression, expire after 30 days, and must not have that
+  secret rotated while active leads remain.
+- Phase 2 tracking accepts only validated GTM, GA4, Meta Pixel, and TikTok
+  public IDs in Admin; arbitrary header code, HTML, URLs, and script injection
+  remain unsupported. Vendor scripts load only after an explicit visitor
+  choice scoped to the exact configured provider IDs. Events contain only
+  route templates, public catalog IDs, quantities, values, and the fixed
+  payment-method enum—never contact, child, personalization, address,
+  payment-proof, or order-number data. Entering a sensitive admin/account/
+  order route after vendor scripts were loaded forces a fresh document first.
 
 ### Manual payment
 
 - Phase 1 has no payment gateway and no automatic payment verification.
-- The checkout must show only payment methods that have real configured
-  instructions. The server also enforces this, so a forged request cannot use
-  an unconfigured method.
+- Every cart can be paid in full upfront by manual InstaPay or generic Mobile
+  Wallet transfer. A full-upfront InstaPay payment receives a 5% incentive on
+  merchandise after any fixed promo, capped at 30 EGP; shipping is excluded.
+  The quote and final order use the same server-side calculation.
+- A cart containing a personalized product can instead use a 50% personalized
+  deposit with cash on delivery. The amount due now is half of the
+  post-promo personalized merchandise (rounded up to a piastre); the remaining
+  personalized balance, all ready-to-ship merchandise, and shipping are due on
+  delivery. This deposit has no InstaPay incentive, even when it is paid via
+  InstaPay.
+- A ready-to-ship-only cart can use cash on delivery without a deposit. It has
+  no payment proof and its full total is due on delivery. A cart containing a
+  personalized product may not use this no-deposit COD option.
+- Manual transfer choices must have real configured customer-facing
+  instructions, and the server enforces that restriction. Cash on delivery is
+  a separately validated server-side payment plan, so a forged request cannot
+  turn a personalized cart into no-deposit COD.
 - Confirmed launch method:
 
   InstaPay  
@@ -102,13 +141,21 @@ Read this file before changing checkout, payments, retention, or scope.
 - Generic Mobile Wallet
   Phone: 01010851818
   Accepted from Vodafone Cash, Orange Money, WE Pay, and Etisalat Cash.
-- A payment screenshot is reviewed manually before production begins.
+- A payment screenshot is required for an upfront transfer or a personalized
+  deposit and is reviewed manually before fulfilment. No screenshot is
+  requested for cash on delivery.
 
 ### Orders, operations, and accounts
 
 - The site exposes order status only. It does not expose courier tracking.
-- Production, payment review, delivery, and other fulfilment operations happen
-  outside the system.
+- New COD orders start in `cod_pending_confirmation` and require an admin
+  confirmation before they can move to `in_production` or `shipped`; they may
+  instead be cancelled. Full transfers and deposits remain manually reviewed.
+- The order records payment plan, payment state, InstaPay incentive, amount due
+  now, actual amount paid, and amount still due on delivery. When an order with
+  a delivery balance is marked delivered, Admin records that balance as cash
+  collected. Production, payment review, delivery, and other fulfilment
+  operations still happen outside the system.
 - Basic email/password reset is used. Customers can view previous orders but
   do not manage fulfilment through their account.
 - Policies are editable from the admin area. Initial Terms, Returns, and
@@ -150,8 +197,11 @@ Read this file before changing checkout, payments, retention, or scope.
   builder. Product copy is safe Markdown only.
 - Drag-and-drop/custom-code form builders, conditional personalization logic,
   and personalization-based pricing.
-- Marketing or bounce analytics, payment integrations, multi-admin roles, and
-  audit logs.
+- Arbitrary header-code injection, arbitrary third-party scripts, marketing
+  automation, automatic outbound recovery messages, and unconsented tracking.
+  Phase 2's narrowly scoped, minimum-data recovery queue and consent-gated
+  provider IDs are the only approved exceptions.
+- External payment-gateway integrations, multi-admin roles, and audit logs.
 
 ## Open items before production launch
 
@@ -172,8 +222,9 @@ upgrading to Workers Paid. Production Cloudflare resources remain
 unprovisioned, and no production rollout may begin until that upgrade and a
 separate approval are complete.
 
-1. Confirm the internal process for reviewing InstaPay and mobile-wallet
-   payment proofs before production begins.
+1. Confirm the internal process for reviewing full-transfer and deposit proofs,
+   confirming COD orders, and recording delivered cash before production
+   begins.
 2. Provide the final production domain, favicon/app icon, final English font
    choice, and replacement product photography. Temporary generated/catalog
    imagery must remain easy to replace.
@@ -192,12 +243,18 @@ separate approval are complete.
 8. After a future new production database is provisioned, create its first
    admin account through the bootstrap flow, then configure governorate fees
    and manual payment details from Admin.
-9. Perform staging tests of real upload, manual-transfer, scheduled-cleanup,
-   mobile payment-link, report totals, and order-review flows using
-   non-sensitive test data.
+9. Perform staging tests of real upload, upfront/deposit/COD payment choices,
+   scheduled cleanup, mobile payment link, report totals, and order-review
+   flows using non-sensitive test data.
 10. Configure customer support phone, email, WhatsApp, business hours,
     delivery/payment guidance, announcement-bar copy, and SEO/social defaults
     in Admin before launch.
+11. Phase 2 remains local and un-deployed as of 2026-07-31. Before a separate
+    staging rollout, apply migration `0006_abandoned_checkout_recovery` first,
+    set a fresh `ABANDONED_CART_ENCRYPTION_SECRET`, verify the built-in Privacy
+    disclosure and tracking-consent controls, then test recovery with
+    non-sensitive data. Do not enable provider IDs or recovery outreach before
+    that review.
 
 ## Change-management notes
 
@@ -208,8 +265,10 @@ separate approval are complete.
   data changes; do not turn the seed back into an overwrite mechanism.
 - Keep server-side pricing authoritative. The browser quote is for customer
   clarity only; final order creation recalculates the price and promotion.
-- Admin reports are operational aggregates only. They intentionally exclude
-  customer PII and private media. Confirmed revenue includes orders currently
-  in `payment_confirmed`, `in_production`, `shipped`, or `delivered`; pending
-  and rejected/cancelled values are shown separately.
+- Admin reports are operational aggregates only and intentionally exclude
+  customer PII and private media. They distinguish submitted order value,
+  accepted order value (`payment_confirmed`, `in_production`, `shipped`, or
+  `delivered`), actual collected revenue (`amountPaid`), pending transfer
+  value, pending-COD-confirmation value, and COD outstanding on active accepted
+  orders. An approved deposit is never counted as the full order value.
 - For a fuller technical map, read docs/architecture.md after this file.

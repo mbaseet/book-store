@@ -6,6 +6,7 @@ import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import { useCart } from '../features/cart/CartContext'
 import { getSettings } from '../lib/api'
 import { useStoreLocale } from '../lib/locale'
+import { TrackingConsentBanner } from './TrackingConsentBanner'
 
 type SafeLink =
   | { kind: 'internal'; href: string }
@@ -134,6 +135,7 @@ export function StorefrontShell() {
         {menuOpen ? <nav className="border-t border-[#0D7D78]/10 bg-[#FAF8F3] px-5 py-3 lg:hidden"><div className="mx-auto grid max-w-7xl gap-1 text-sm font-extrabold text-[#075f5b]"><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')}</Link><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/stories')}>{text('هدايا مخصّصة', 'Personalized gifts')}</Link><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/stories')}>{text('تعلّم والعب', 'Learn & play')}</Link><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/how-it-works')}>{text('كيف تعمل', 'How it works')}</Link><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/track-order')}>{text('تتبّع الطلب', 'Track order')}</Link></div></nav> : null}
       </header>
       <Outlet />
+      {settings?.tracking ? <TrackingConsentBanner tracking={settings.tracking} /> : null}
       <footer className="mt-16 overflow-hidden border-t border-[#0D7D78]/10 bg-[#0D7D78] text-[#FAF8F3]">
         <div className="mx-auto grid max-w-7xl gap-7 px-5 py-10 text-sm sm:px-8 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
@@ -150,6 +152,7 @@ export function StorefrontShell() {
             </div> : null}
             <div className="flex flex-wrap gap-4">
               <Link to={localizedPath('/privacy')}>{text('الخصوصية', 'Privacy')}</Link>
+              <Link to={`${localizedPath('/privacy')}#privacy-choices`}>{text('خيارات الخصوصية', 'Privacy choices')}</Link>
               <Link to={localizedPath('/terms')}>{text('الشروط', 'Terms')}</Link>
               <Link to={localizedPath('/returns')}>{text('الاستبدال والاسترجاع', 'Returns')}</Link>
             </div>

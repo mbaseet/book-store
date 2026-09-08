@@ -1,4 +1,5 @@
 import type { OrderItemInput } from '@shared/contracts/checkout'
+import type { PaymentMethod, PaymentPlan } from '@shared/constants'
 
 export type PriceableAddon = {
   id: string
@@ -14,6 +15,12 @@ export type PriceableProduct = {
   basePriceAmount: number
   salePriceAmount: number | null
   addons: PriceableAddon[]
+  /**
+   * This is derived by checkout data from the product's current
+   * personalization definition. It remains optional while older call sites
+   * are migrated; an omitted value is a ready-to-ship product.
+   */
+  isPersonalized?: boolean
 }
 
 export type EligiblePromoCode = {
@@ -37,6 +44,22 @@ export type PricedCartItem = {
   saleUnitPriceAmount: number | null
   finalUnitPriceAmount: number
   lineTotalAmount: number
+  isPersonalized: boolean
+}
+
+// Payment options are shared with the request contracts so pricing cannot
+// quietly drift from the checkout API.
+export type PricingPaymentMethod = PaymentMethod
+export type { PaymentPlan }
+
+export const INSTAPAY_DISCOUNT_CAP_AMOUNT = 3000
+
+export type PaymentEligibility = {
+  hasPersonalizedItems: boolean
+  hasReadyToShipItems: boolean
+  fullUpfront: true
+  personalizedDepositCod: boolean
+  cashOnDelivery: boolean
 }
 
 export type OrderPricing = {
@@ -45,8 +68,26 @@ export type OrderPricing = {
   promoDiscountAmount: number
   discountedSubtotalAmount: number
   shippingFeeAmount: number
+  /** The order total after the fixed promo and shipping, before payment incentives. */
+  totalBeforePaymentDiscountAmount: number
+  /**
+   * The 5% full-upfront InstaPay incentive. This intentionally excludes
+   * shipping and is always zero for deposits and COD.
+   */
+  instapayDiscountAmount: number
   totalAmount: number
   freeShippingApplied: boolean
+  personalizedSubtotalAmount: number
+  readyToShipSubtotalAmount: number
+  personalizedPromoDiscountAmount: number
+  readyToShipPromoDiscountAmount: number
+  personalizedDiscountedSubtotalAmount: number
+  readyToShipDiscountedSubtotalAmount: number
+  paymentPlan: PaymentPlan
+  paymentMethod: PricingPaymentMethod | null
+  amountDueNow: number
+  amountDueOnDelivery: number
+  paymentEligibility: PaymentEligibility
 }
 
 export class PricingError extends Error {}
@@ -78,12 +119,63 @@ function assertPromoIsEligible(promo: EligiblePromoCode | null, subtotalAmount: 
   return promo
 }
 
+function resolvePaymentChoice({
+  paymentPlan,
+  paymentMethod,
+  hasPersonalizedItems,
+}: {
+  paymentPlan: PaymentPlan | undefined
+  paymentMethod: PricingPaymentMethod | undefined
+  hasPersonalizedItems: boolean
+}) {
+  const resolvedPaymentPlan = paymentPlan ?? (paymentMethod === 'cash_on_delivery' ? 'cash_on_delivery' : 'full_upfront')
+  const resolvedPaymentMethod = paymentMethod ?? null
+
+  if (resolvedPaymentPlan === 'personalized_deposit_cod' && !hasPersonalizedItems) {
+    throw new PricingError('A deposit is available only when the order includes a personalized product.')
+  }
+  if (resolvedPaymentPlan === 'cash_on_delivery' && hasPersonalizedItems) {
+    throw new PricingError('Personalized products require a deposit or full upfront payment.')
+  }
+
+  if (resolvedPaymentPlan === 'cash_on_delivery' && resolvedPaymentMethod !== null && resolvedPaymentMethod !== 'cash_on_delivery') {
+    throw new PricingError('Cash on delivery must use the cash-on-delivery payment method.')
+  }
+  if (
+    resolvedPaymentPlan !== 'cash_on_delivery' &&
+    resolvedPaymentMethod === 'cash_on_delivery'
+  ) {
+    throw new PricingError('Cash on delivery cannot be used for this payment plan.')
+  }
+
+  return { paymentPlan: resolvedPaymentPlan, paymentMethod: resolvedPaymentMethod }
+}
+
+function allocatePromoDiscount({
+  promoDiscountAmount,
+  subtotalAmount,
+  personalizedSubtotalAmount,
+}: {
+  promoDiscountAmount: number
+  subtotalAmount: number
+  personalizedSubtotalAmount: number
+}) {
+  if (promoDiscountAmount === 0 || personalizedSubtotalAmount === 0 || subtotalAmount === 0) return 0
+
+  // Keep all money in integer piastres. The ready-to-ship share receives an
+  // unavoidable one-piastre rounding remainder, so the two allocations
+  // always sum exactly to the applied fixed promo.
+  return Math.floor((promoDiscountAmount * personalizedSubtotalAmount) / subtotalAmount)
+}
+
 export function calculateOrderPricing({
   cartItems,
   products,
   promoCode,
   governorateShippingFeeAmount,
   freeShippingThresholdAmount,
+  paymentPlan,
+  paymentMethod,
   now = new Date(),
 }: {
   cartItems: PriceableCartItem[]
@@ -91,6 +183,8 @@ export function calculateOrderPricing({
   promoCode: EligiblePromoCode | null
   governorateShippingFeeAmount: number
   freeShippingThresholdAmount: number | null
+  paymentPlan?: PaymentPlan
+  paymentMethod?: PricingPaymentMethod
   now?: Date
 }): OrderPricing {
   if (governorateShippingFeeAmount < 0) {
@@ -125,6 +219,7 @@ export function calculateOrderPricing({
       saleUnitPriceAmount,
       finalUnitPriceAmount,
       lineTotalAmount: (finalUnitPriceAmount + addonsTotal) * item.quantity,
+      isPersonalized: product.isPersonalized === true,
     }
   })
 
@@ -132,9 +227,46 @@ export function calculateOrderPricing({
   const promo = assertPromoIsEligible(promoCode, subtotalAmount, now)
   const promoDiscountAmount = promo === null ? 0 : Math.min(promo.fixedDiscountAmount, subtotalAmount)
   const discountedSubtotalAmount = subtotalAmount - promoDiscountAmount
+  const personalizedSubtotalAmount = items
+    .filter((item) => item.isPersonalized)
+    .reduce((total, item) => total + item.lineTotalAmount, 0)
+  const readyToShipSubtotalAmount = subtotalAmount - personalizedSubtotalAmount
+  const personalizedPromoDiscountAmount = allocatePromoDiscount({
+    promoDiscountAmount,
+    subtotalAmount,
+    personalizedSubtotalAmount,
+  })
+  const readyToShipPromoDiscountAmount = promoDiscountAmount - personalizedPromoDiscountAmount
+  const personalizedDiscountedSubtotalAmount = personalizedSubtotalAmount - personalizedPromoDiscountAmount
+  const readyToShipDiscountedSubtotalAmount = readyToShipSubtotalAmount - readyToShipPromoDiscountAmount
   const freeShippingApplied =
     freeShippingThresholdAmount !== null && discountedSubtotalAmount >= freeShippingThresholdAmount
   const shippingFeeAmount = freeShippingApplied ? 0 : governorateShippingFeeAmount
+  const totalBeforePaymentDiscountAmount = discountedSubtotalAmount + shippingFeeAmount
+  const paymentEligibility: PaymentEligibility = {
+    hasPersonalizedItems: items.some((item) => item.isPersonalized),
+    hasReadyToShipItems: items.some((item) => !item.isPersonalized),
+    fullUpfront: true,
+    personalizedDepositCod: items.some((item) => item.isPersonalized),
+    cashOnDelivery: !items.some((item) => item.isPersonalized),
+  }
+  const payment = resolvePaymentChoice({
+    paymentPlan,
+    paymentMethod,
+    hasPersonalizedItems: paymentEligibility.hasPersonalizedItems,
+  })
+  const instapayDiscountAmount =
+    payment.paymentPlan === 'full_upfront' && payment.paymentMethod === 'instapay'
+      ? Math.min(Math.floor(discountedSubtotalAmount / 20), INSTAPAY_DISCOUNT_CAP_AMOUNT)
+      : 0
+  const totalAmount = totalBeforePaymentDiscountAmount - instapayDiscountAmount
+  const amountDueNow =
+    payment.paymentPlan === 'personalized_deposit_cod'
+      ? Math.ceil(personalizedDiscountedSubtotalAmount / 2)
+      : payment.paymentPlan === 'cash_on_delivery'
+        ? 0
+        : totalAmount
+  const amountDueOnDelivery = totalAmount - amountDueNow
 
   return {
     items,
@@ -142,7 +274,20 @@ export function calculateOrderPricing({
     promoDiscountAmount,
     discountedSubtotalAmount,
     shippingFeeAmount,
-    totalAmount: discountedSubtotalAmount + shippingFeeAmount,
+    totalBeforePaymentDiscountAmount,
+    instapayDiscountAmount,
+    totalAmount,
     freeShippingApplied,
+    personalizedSubtotalAmount,
+    readyToShipSubtotalAmount,
+    personalizedPromoDiscountAmount,
+    readyToShipPromoDiscountAmount,
+    personalizedDiscountedSubtotalAmount,
+    readyToShipDiscountedSubtotalAmount,
+    paymentPlan: payment.paymentPlan,
+    paymentMethod: payment.paymentMethod,
+    amountDueNow,
+    amountDueOnDelivery,
+    paymentEligibility,
   }
 }

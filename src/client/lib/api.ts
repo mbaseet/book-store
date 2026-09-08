@@ -6,6 +6,11 @@ import type {
   CheckoutUploadReference,
   PrivateUploadRequest,
 } from '@shared/contracts/checkout'
+import type {
+  RecoveryLeadMutableState,
+  RecoveryLeadResponse,
+  RecoveryLeadState,
+} from '@shared/contracts/recovery'
 
 export type Locale = 'ar' | 'en'
 
@@ -49,6 +54,12 @@ export type Product = ProductCard & {
 }
 
 export type Governorate = { code: string; name: string; shippingFeeAmount: number }
+export type TrackingSettings = {
+  gtmContainerId: string | null
+  ga4MeasurementId: string | null
+  metaPixelId: string | null
+  tiktokPixelId: string | null
+}
 export type StorefrontSettings = {
   brandName: string | null
   whatsappUrl: string | null
@@ -68,6 +79,7 @@ export type StorefrontSettings = {
     description: string | null
     ogImageUrl: string | null
   } | null
+  tracking: TrackingSettings
 }
 
 export type StorefrontFaq = { id: string; question: string; answer: string }
@@ -77,10 +89,16 @@ export type CartCheckoutResult = {
   order: {
     orderNumber: string
     status: string
+    paymentPlan: 'full_upfront' | 'personalized_deposit_cod' | 'cash_on_delivery'
+    paymentStatus: string
     subtotalAmount: number
     promoDiscountAmount: number
+    instapayDiscountAmount: number
     shippingFeeAmount: number
     totalAmount: number
+    amountDueNow: number
+    amountPaid: number
+    amountDueOnDelivery: number
     currency: string
   }
 }
@@ -88,8 +106,23 @@ export type CartCheckoutResult = {
 export type CheckoutQuote = {
   subtotalAmount: number
   promoDiscountAmount: number
+  instapayDiscountAmount: number
   shippingFeeAmount: number
   totalAmount: number
+  totalBeforePaymentDiscountAmount: number
+  amountDueNow: number
+  amountDueOnDelivery: number
+  personalizedSubtotalAmount: number
+  readyToShipSubtotalAmount: number
+  paymentPlan: 'full_upfront' | 'personalized_deposit_cod' | 'cash_on_delivery'
+  paymentMethod: 'instapay' | 'mobile_wallet' | 'cash_on_delivery' | null
+  paymentEligibility: {
+    hasPersonalizedItems: boolean
+    hasReadyToShipItems: boolean
+    fullUpfront: true
+    personalizedDepositCod: boolean
+    cashOnDelivery: boolean
+  }
   freeShippingApplied: boolean
   currency: string
 }
@@ -119,6 +152,9 @@ export type CheckoutDraft = {
   items: CheckoutDraftItem[]
   delivery: CheckoutDraftDeliveryInput
 }
+
+export type AdminRecoveryLead = RecoveryLeadResponse
+export type AdminRecoveryLeadState = RecoveryLeadState
 
 export type Customer = { id: string; email: string; phone: string | null; displayName: string | null }
 export type CustomerOrder = {
@@ -218,9 +254,14 @@ export type AdminOrderSummary = {
   orderNumber: string
   status: string
   customerName: string
-  email: string
+  email: string | null
   phone: string
+  paymentPlan: string
+  paymentStatus: string
   totalAmount: number
+  amountDueNow: number
+  amountPaid: number
+  amountDueOnDelivery: number
   currency: string
   createdAt: string
   itemTitles: string[]
@@ -239,21 +280,41 @@ export type AdminReport = {
   }
   summary: {
     submittedOrderCount: number
+    acceptedOrderCount: number
+    acceptedOrderValueAmount: number
+    collectedRevenueAmount: number
     confirmedRevenueAmount: number
     pendingPaymentValueAmount: number
+    pendingCodConfirmationValueAmount: number
+    codOutstandingAmount: number
     rejectedCancelledValueAmount: number
     averageOrderValueAmount: number
     shippingFeeAmount: number
     promoDiscountAmount: number
+    instapayDiscountAmount: number
     currency: string
   }
   statusMix: Array<{ status: string; orderCount: number; totalAmount: number }>
-  dailyTrend: Array<{ date: string; orderCount: number; totalAmount: number; confirmedRevenueAmount: number }>
+  dailyTrend: Array<{
+    date: string
+    orderCount: number
+    totalAmount: number
+    acceptedOrderValueAmount: number
+    collectedRevenueAmount: number
+    // Kept for the original report contract; equals collectedRevenueAmount.
+    confirmedRevenueAmount: number
+    pendingPaymentValueAmount: number
+    pendingCodConfirmationValueAmount: number
+    codOutstandingAmount: number
+  }>
   topStories: Array<{
     productId: string | null
     productTitle: string
     quantity: number
     orderCount: number
+    acceptedOrderValueAmount: number
+    collectedRevenueAmount: number
+    // Kept for the original report contract; equals collectedRevenueAmount.
     confirmedRevenueAmount: number
   }>
   promoPerformance: Array<{ code: string; redemptions: number; discountAmount: number; orderValueAmount: number }>
@@ -261,23 +322,30 @@ export type AdminReport = {
 }
 
 export type AdminOrderDetail = {
+  allowedNextStatuses: string[]
   order: {
     orderNumber: string
     status: string
     customerName: string
-    email: string
+    email: string | null
     phone: string
     governorateName: string
     city: string
     addressLine1: string
     addressLine2: string | null
     addressNote: string | null
+    paymentPlan: string
     paymentMethod: string
+    paymentStatus: string
     subtotalAmount: number
     promoCode: string | null
     promoDiscountAmount: number
+    instapayDiscountAmount: number
     shippingFeeAmount: number
     totalAmount: number
+    amountDueNow: number
+    amountPaid: number
+    amountDueOnDelivery: number
     currency: string
     createdAt: string
     sensitiveDataPurgeAt: string | null
@@ -667,6 +735,26 @@ export function getAdminOrders(status?: string) {
   return apiFetch<{ orders: AdminOrderSummary[] }>(`/api/admin/orders?${parameters}`, ADMIN_LOCALE)
 }
 
+export function getAdminRecoveryLeads(options: {
+  state?: AdminRecoveryLeadState | 'all'
+  from?: string
+  to?: string
+  limit?: number
+} = {}) {
+  const parameters = new URLSearchParams({ limit: String(options.limit ?? 50) })
+  if (options.state) parameters.set('state', options.state)
+  if (options.from) parameters.set('from', options.from)
+  if (options.to) parameters.set('to', options.to)
+  return apiFetch<{ leads: AdminRecoveryLead[] }>(`/api/admin/recovery?${parameters}`, ADMIN_LOCALE)
+}
+
+export function updateAdminRecoveryLeadState(id: string, state: RecoveryLeadMutableState) {
+  return apiFetch<{ lead: AdminRecoveryLead }>(`/api/admin/recovery/${encodeURIComponent(id)}`, ADMIN_LOCALE, {
+    method: 'PATCH',
+    body: JSON.stringify({ state }),
+  })
+}
+
 export function getAdminReport(options: { range?: AdminReportRange; from?: string; to?: string } = {}) {
   const parameters = new URLSearchParams({ range: options.range ?? '30d' })
   if (options.from) parameters.set('from', options.from)
@@ -679,7 +767,13 @@ export function getAdminOrder(orderNumber: string) {
 }
 
 export function updateAdminOrderStatus(orderNumber: string, status: string, customerVisibleNote?: string) {
-  return apiFetch<{ status: string }>(`/api/admin/orders/${encodeURIComponent(orderNumber)}/status`, ADMIN_LOCALE, {
+  return apiFetch<{
+    status: string
+    paymentStatus: string
+    amountPaid: number
+    amountDueOnDelivery: number
+    sensitiveDataPurgeAt: string | null
+  }>(`/api/admin/orders/${encodeURIComponent(orderNumber)}/status`, ADMIN_LOCALE, {
     method: 'POST',
     body: JSON.stringify({ status, customerVisibleNote: customerVisibleNote || undefined }),
   })

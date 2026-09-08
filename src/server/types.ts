@@ -1,4 +1,5 @@
 export type Bindings = {
+  ABANDONED_CART_ENCRYPTION_SECRET: string
   ASSETS: {
     fetch(request: Request): Promise<Response>
   }

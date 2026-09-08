@@ -11,6 +11,7 @@ import { createDb } from '../db'
 import { checkoutDraftsTable, checkoutUploadsTable } from '../db/schema'
 import { createOpaqueToken, hashToken } from '../lib/crypto'
 import type { Bindings } from '../types'
+import { promoteExpiredCheckoutDraftToRecoveryLead } from './abandoned-checkout-recovery'
 
 type Database = ReturnType<typeof createDb>
 type CookieContext = Context
@@ -65,7 +66,10 @@ const storedCheckoutDraftSchema = z.object({
     addressLine1: z.string().max(250),
     addressLine2: z.string().max(250),
     addressNote: z.string().max(500),
-    paymentMethod: z.union([z.enum(['instapay', 'mobile_wallet']), z.literal('')]),
+    paymentMethod: z.union([z.enum(['instapay', 'mobile_wallet', 'cash_on_delivery']), z.literal('')]),
+    // Missing from pre-COD encrypted drafts; default keeps their 60-minute
+    // resume window intact through this deployment.
+    paymentPlan: z.union([z.enum(['full_upfront', 'personalized_deposit_cod', 'cash_on_delivery']), z.literal('')]).default(''),
     promoCode: z.string().max(40),
     appliedPromoCode: z.string().max(40),
   }),
@@ -105,6 +109,14 @@ export class CheckoutDraftConflictError extends CheckoutDraftError {
   }
 }
 
+/** A completed source draft must never become an abandoned-cart recovery lead. */
+export function shouldPromoteExpiredCheckoutDraft(
+  draft: { expiresAt: Date; consumedAt: Date | null },
+  now = new Date(),
+) {
+  return draft.consumedAt === null && draft.expiresAt <= now
+}
+
 function emptyDelivery(): CheckoutDraftDeliveryInput {
   return {
     customerName: '',
@@ -116,6 +128,7 @@ function emptyDelivery(): CheckoutDraftDeliveryInput {
     addressLine2: '',
     addressNote: '',
     paymentMethod: '',
+    paymentPlan: '',
     promoCode: '',
     appliedPromoCode: '',
   }
@@ -229,7 +242,28 @@ export async function getCurrentCheckoutDraft(
     clearDraftCookie(context)
     return null
   }
-  if (draft.expiresAt <= new Date()) {
+  if (draft.consumedAt) {
+    // The order batch succeeded but its best-effort draft cleanup did not.
+    // Remove the residual source without ever attempting recovery promotion.
+    await deleteExpiredOrUnreadableDraft(context, db, draft.id)
+    return null
+  }
+  if (shouldPromoteExpiredCheckoutDraft(draft)) {
+    // The richer checkout draft may include child data and private uploads.
+    // Build the separate, whitelisted recovery record before deleting it. A
+    // missing recovery secret still leaves the 60-minute retention policy
+    // intact because the source draft is removed either way.
+    try {
+      const payload = await decryptDraft(env, draft.payload)
+      await promoteExpiredCheckoutDraftToRecoveryLead(db, env, {
+        id: draft.id,
+        expiresAt: draft.expiresAt,
+        payload,
+      })
+    } catch {
+      // Fail closed and do not extend expired draft retention if recovery is
+      // unavailable or the encrypted draft is unreadable.
+    }
     await deleteExpiredOrUnreadableDraft(context, db, draft.id)
     return null
   }
@@ -351,7 +385,11 @@ export async function appendCheckoutDraftItem(
       const token = createOpaqueToken()
       const draftId = crypto.randomUUID()
       const provisionalExpiresAt = new Date(Date.now() + DRAFT_LIFETIME_MS)
-      const payload: StoredCheckoutDraft = { version: 1, items: [item], delivery: emptyDelivery() }
+      const payload: StoredCheckoutDraft = {
+        version: 1,
+        items: [item],
+        delivery: emptyDelivery(),
+      }
       await db.insert(checkoutDraftsTable).values({
         id: draftId,
         tokenHash: await hashToken(token),
@@ -500,13 +538,42 @@ export async function consumeCheckoutDraft(context: CookieContext, db: Database,
   clearDraftCookie(context)
 }
 
-export async function purgeExpiredCheckoutDrafts(db: Database, { limit = 100 }: { limit?: number } = {}) {
+export async function purgeExpiredCheckoutDrafts(
+  db: Database,
+  env: Bindings,
+  { limit = 100, now = new Date() }: { limit?: number; now?: Date } = {},
+) {
   const dueDrafts = await db
-    .select({ id: checkoutDraftsTable.id })
+    .select({
+      id: checkoutDraftsTable.id,
+      payload: checkoutDraftsTable.payload,
+      consumedAt: checkoutDraftsTable.consumedAt,
+      expiresAt: checkoutDraftsTable.expiresAt,
+    })
     .from(checkoutDraftsTable)
-    .where(lte(checkoutDraftsTable.expiresAt, new Date()))
+    .where(lte(checkoutDraftsTable.expiresAt, now))
     .limit(Math.min(Math.max(limit, 1), 100))
   if (dueDrafts.length === 0) return 0
-  await db.delete(checkoutDraftsTable).where(inArray(checkoutDraftsTable.id, dueDrafts.map((draft) => draft.id)))
+
+  // Promotion is intentionally per draft and always happens before deletion.
+  // A malformed payload or an unconfigured recovery secret must never make a
+  // 60-minute draft survive longer than its stated retention period.
+  for (const draft of dueDrafts) {
+    if (shouldPromoteExpiredCheckoutDraft(draft, now)) {
+      try {
+        const payload = await decryptDraft(env, draft.payload)
+        await promoteExpiredCheckoutDraftToRecoveryLead(db, env, {
+          id: draft.id,
+          expiresAt: draft.expiresAt,
+          payload,
+        }, now)
+      } catch {
+        // Fail closed: no recovery record can be created from unreadable data.
+      }
+    }
+    await db
+      .delete(checkoutDraftsTable)
+      .where(and(eq(checkoutDraftsTable.id, draft.id), lte(checkoutDraftsTable.expiresAt, now)))
+  }
   return dueDrafts.length
 }

@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   LoaderCircle,
   LogOut,
+  MessageCircle,
   PackageSearch,
   Plus,
   RotateCcw,
@@ -40,6 +41,7 @@ import {
   type AdminFaq,
   type AdminGovernorate,
   type AdminOrderDetail,
+  type AdminRecoveryLead,
   type AdminProduct,
   type AdminProductListItem,
   type AdminPromoCode,
@@ -64,6 +66,7 @@ import {
   getCurrentAdmin,
   getAdminOrder,
   getAdminOrders,
+  getAdminRecoveryLeads,
   getAdminProduct,
   getAdminProducts,
   getAdminReport,
@@ -80,13 +83,14 @@ import {
   saveAdminSettings,
   saveAdminTestimonial,
   updateAdminOrderStatus,
+  updateAdminRecoveryLeadState,
   uploadCatalogImage,
 } from '../lib/api'
 import { formatDate, formatMoney, orderStatusLabel } from '../lib/format'
 import { fieldErrorsByPath, requestErrorMessage } from '../lib/form-errors'
 import { MarkdownEditor } from '../components/admin/MarkdownEditor'
 
-type AdminTab = 'overview' | 'orders' | 'catalog' | 'operations' | 'content'
+type AdminTab = 'overview' | 'orders' | 'recovery' | 'catalog' | 'operations' | 'settings' | 'content'
 type AdminAccessMode = 'login' | 'bootstrap'
 type CategoryDraft = Omit<AdminCategory, 'id'>
 type ProductDraft = Omit<AdminProduct, 'id'>
@@ -329,24 +333,39 @@ function AdminDashboard({ admin }: { admin: Admin }) {
   const normalizedPath = location.pathname.replace(/\/+$/, '') || '/admin'
   const tab: AdminTab = normalizedPath.startsWith('/admin/orders')
     ? 'orders'
+    : normalizedPath.startsWith('/admin/recovery')
+      ? 'recovery'
     : normalizedPath.startsWith('/admin/catalog')
       ? 'catalog'
       : normalizedPath.startsWith('/admin/operations')
         ? 'operations'
-        : normalizedPath.startsWith('/admin/content')
-          ? 'content'
-          : 'overview'
+        : normalizedPath.startsWith('/admin/settings')
+          ? 'settings'
+          : normalizedPath.startsWith('/admin/content')
+            ? 'content'
+            : 'overview'
   const logout = async () => {
     await adminLogout()
-    await client.invalidateQueries({ queryKey: ['admin-me'] })
-    client.removeQueries({ queryKey: ['admin'] })
+    // Recovery leads and order views can include decrypted/admin-only data.
+    // React Query's key matching is segment-based, so ['admin'] would not
+    // clear keys such as ['admin-recovery'] or ['admin-order', number].
+    client.removeQueries({
+      predicate: (query) => typeof query.queryKey[0] === 'string'
+        && query.queryKey[0].startsWith('admin')
+        && query.queryKey[0] !== 'admin-me',
+    })
+    // Keep the active auth observer deterministic: it immediately renders the
+    // signed-out access screen instead of retaining its previous admin value.
+    client.setQueryData<{ admin: Admin | null }>(['admin-me'], { admin: null })
   }
   const tabs: Array<{ id: AdminTab; label: string; path: string; icon: React.ReactNode }> = [
     { id: 'overview', label: 'Overview', path: '/admin/overview', icon: <LayoutDashboard size={17} /> },
     { id: 'orders', label: 'Orders', path: '/admin/orders', icon: <ClipboardList size={17} /> },
+    { id: 'recovery', label: 'Saved carts', path: '/admin/recovery', icon: <MessageCircle size={17} /> },
     { id: 'catalog', label: 'Catalog', path: '/admin/catalog', icon: <BookOpen size={17} /> },
     { id: 'operations', label: 'Shipping & promos', path: '/admin/operations', icon: <Truck size={17} /> },
-    { id: 'content', label: 'Store content', path: '/admin/content', icon: <Settings2 size={17} /> },
+    { id: 'settings', label: 'Store settings', path: '/admin/settings', icon: <Settings2 size={17} /> },
+    { id: 'content', label: 'Store content', path: '/admin/content', icon: <FileText size={17} /> },
   ]
   if (normalizedPath === '/admin') return <Navigate to="/admin/overview" replace />
   return <div className="min-h-dvh bg-[#fffaf4] text-[#2c1c14]" dir="ltr">
@@ -360,8 +379,10 @@ function AdminDashboard({ admin }: { admin: Admin }) {
     <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
       {tab === 'overview' ? <OverviewPanel /> : null}
       {tab === 'orders' ? <OrdersPanel /> : null}
+      {tab === 'recovery' ? <RecoveryPanel /> : null}
       {tab === 'catalog' ? <CatalogPanel /> : null}
       {tab === 'operations' ? <OperationsPanel /> : null}
+      {tab === 'settings' ? <SettingsPanel /> : null}
       {tab === 'content' ? <ContentPanel /> : null}
     </main>
   </div>
@@ -400,10 +421,10 @@ function OverviewPanel() {
     {reportQuery.isLoading ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((item) => <div key={item} className="h-36 animate-pulse rounded-3xl bg-[#f2e4d6]" />)}</div> : null}
     {reportQuery.isError ? <FormMessage>{errorMessage(reportQuery.error)}</FormMessage> : null}
     {!reportQuery.isLoading && !reportQuery.isError && !report && range === 'custom' ? <div className="rounded-3xl bg-[#f8ecdf] p-7 text-center text-sm text-[#624b40]">Select both a start and end date to view the report.</div> : null}
-    {report ? <><div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-sm text-[#624b40]"><span>Reporting period: <strong>{report.range.from}</strong> to <strong>{report.range.to}</strong></span><span className="rounded-full bg-[#f8ecdf] px-3 py-1 text-xs font-bold">{report.range.timezone}</span></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Submitted orders" value={String(report.summary.submittedOrderCount)} note="Orders placed in this reporting period." /><MetricCard label="Confirmed revenue" value={formatMoney(report.summary.confirmedRevenueAmount, 'en')} note="Payment confirmed, in production, shipped, or delivered." tone="green" /><MetricCard label="Awaiting review" value={formatMoney(report.summary.pendingPaymentValueAmount, 'en')} note="Payment submitted or action required; not counted as revenue." tone="blue" /><MetricCard label="Average order" value={formatMoney(report.summary.averageOrderValueAmount, 'en')} note={`${formatMoney(report.summary.rejectedCancelledValueAmount, 'en')} rejected or cancelled.`} tone="plain" /></div>
+    {report ? <><div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-sm text-[#624b40]"><span>Reporting period: <strong>{report.range.from}</strong> to <strong>{report.range.to}</strong></span><span className="rounded-full bg-[#f8ecdf] px-3 py-1 text-xs font-bold">{report.range.timezone}</span></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Submitted orders" value={String(report.summary.submittedOrderCount)} note="Orders placed in this reporting period." /><MetricCard label="Accepted order value" value={formatMoney(report.summary.acceptedOrderValueAmount, 'en')} note={`${report.summary.acceptedOrderCount} orders cleared for fulfilment or delivery.`} tone="plain" /><MetricCard label="Collected revenue" value={formatMoney(report.summary.collectedRevenueAmount, 'en')} note="Only payment confirmed or COD cash recorded; never unpaid COD." tone="green" /><MetricCard label="Transfer review" value={formatMoney(report.summary.pendingPaymentValueAmount, 'en')} note="Amount due now on submitted transfers; not revenue." tone="blue" /><MetricCard label="COD confirmation" value={formatMoney(report.summary.pendingCodConfirmationValueAmount, 'en')} note="Ready-to-ship orders awaiting your confirmation." tone="warm" /><MetricCard label="COD to collect" value={formatMoney(report.summary.codOutstandingAmount, 'en')} note="Balance still due on active accepted COD orders." tone="blue" /><MetricCard label="InstaPay savings" value={formatMoney(report.summary.instapayDiscountAmount, 'en')} note="5% incentive given in this reporting period." tone="green" /><MetricCard label="Average order" value={formatMoney(report.summary.averageOrderValueAmount, 'en')} note={`${formatMoney(report.summary.rejectedCancelledValueAmount, 'en')} rejected or cancelled.`} tone="plain" /></div>
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.25fr_.75fr]"><section className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5"><div className="flex items-center justify-between gap-3"><div><h3 className="font-serif text-2xl">Daily order activity</h3><p className="mt-1 text-sm text-[#624b40]">Orders placed in the selected reporting period.</p></div><ClipboardList size={20} className="text-[#a95a39]" /></div>{report.dailyTrend.length ? <div className="mt-7 flex h-52 items-end gap-2 overflow-x-auto pb-1">{report.dailyTrend.map((item) => <div key={item.date} className="flex min-w-10 flex-1 flex-col items-center gap-2"><span className="text-xs font-bold text-[#624b40]">{item.orderCount || ''}</span><div className="w-full min-w-6 rounded-t-xl bg-[#a95a39] transition-all" style={{ height: `${Math.max(item.orderCount ? 18 : 4, (item.orderCount / maxOrders) * 155)}px` }} title={`${item.date}: ${item.orderCount} orders`} /><span className="text-[10px] font-bold text-[#80695c]">{item.date.slice(5)}</span></div>)}</div> : <p className="mt-5 rounded-2xl bg-[#f8ecdf] p-4 text-sm text-[#624b40]">No orders in this period yet.</p>}</section><section className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5"><div className="flex items-center gap-2"><Check size={18} className="text-[#a95a39]" /><h3 className="font-serif text-2xl">Order status mix</h3></div><div className="mt-5 space-y-3">{report.statusMix.length ? report.statusMix.map((item) => <div key={item.status}><div className="flex justify-between gap-3 text-sm"><span>{orderStatusLabel(item.status, 'en')}</span><strong>{item.orderCount}</strong></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#f8ecdf]"><div className="h-full rounded-full bg-[#a95a39]" style={{ width: `${(item.orderCount / maxStatus) * 100}%` }} /></div></div>) : <p className="rounded-2xl bg-[#f8ecdf] p-4 text-sm text-[#624b40]">No statuses to show yet.</p>}</div></section></div>
-      <div className="mt-6 grid gap-6 xl:grid-cols-3"><section className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5"><div className="flex items-center gap-2"><BookOpen size={18} className="text-[#a95a39]" /><h3 className="font-serif text-2xl">Top stories</h3></div><div className="mt-4 space-y-3">{report.topStories.length ? report.topStories.slice(0, 5).map((story, index) => <div key={`${story.productId ?? story.productTitle}-${index}`} className="flex items-start justify-between gap-3 rounded-2xl bg-[#f8ecdf] p-3"><div className="min-w-0"><span className="text-xs font-bold text-[#a95a39]">#{index + 1}</span><strong className="mt-1 block truncate text-sm">{story.productTitle}</strong><span className="mt-1 block text-xs text-[#80695c]">{story.quantity} books · {story.orderCount} orders</span></div><strong className="shrink-0 text-xs text-[#624b40]">{formatMoney(story.confirmedRevenueAmount, 'en')}</strong></div>) : <p className="rounded-2xl bg-[#f8ecdf] p-4 text-sm text-[#624b40]">No story sales yet.</p>}</div></section><section className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5"><div className="flex items-center gap-2"><Tag size={18} className="text-[#a95a39]" /><h3 className="font-serif text-2xl">Promo results</h3></div><div className="mt-4 space-y-3">{report.promoPerformance.length ? report.promoPerformance.slice(0, 5).map((promo) => <div key={promo.code} className="rounded-2xl bg-[#f8ecdf] p-3"><div className="flex justify-between gap-3"><strong>{promo.code}</strong><span className="text-xs font-bold text-[#624b40]">{promo.redemptions} uses</span></div><p className="mt-2 text-xs text-[#80695c]">{formatMoney(promo.discountAmount, 'en')} discounted · {formatMoney(promo.orderValueAmount, 'en')} order value</p></div>) : <p className="rounded-2xl bg-[#f8ecdf] p-4 text-sm text-[#624b40]">No promo redemptions in this period.</p>}</div></section><section className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5"><div className="flex items-center gap-2"><Truck size={18} className="text-[#a95a39]" /><h3 className="font-serif text-2xl">Governorates</h3></div><div className="mt-4 space-y-3">{report.governorates.length ? report.governorates.slice(0, 5).map((governorate) => <div key={governorate.governorateName} className="rounded-2xl bg-[#f8ecdf] p-3"><div className="flex justify-between gap-3"><strong>{governorate.governorateName}</strong><span className="text-xs font-bold text-[#624b40]">{governorate.orderCount} orders</span></div><p className="mt-2 text-xs text-[#80695c]">{formatMoney(governorate.totalAmount, 'en')} value · {formatMoney(governorate.shippingFeeAmount, 'en')} shipping</p></div>) : <p className="rounded-2xl bg-[#f8ecdf] p-4 text-sm text-[#624b40]">No delivery data in this period.</p>}</div></section></div>
-      <p className="mt-4 text-xs leading-5 text-[#80695c]">Reports intentionally exclude customer contact details and private media. Confirmed revenue includes only payment-confirmed, production, shipped, and delivered orders.</p></> : null}
+      <div className="mt-6 grid gap-6 xl:grid-cols-3"><section className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5"><div className="flex items-center gap-2"><BookOpen size={18} className="text-[#a95a39]" /><h3 className="font-serif text-2xl">Top stories</h3></div><div className="mt-4 space-y-3">{report.topStories.length ? report.topStories.slice(0, 5).map((story, index) => <div key={`${story.productId ?? story.productTitle}-${index}`} className="flex items-start justify-between gap-3 rounded-2xl bg-[#f8ecdf] p-3"><div className="min-w-0"><span className="text-xs font-bold text-[#a95a39]">#{index + 1}</span><strong className="mt-1 block truncate text-sm">{story.productTitle}</strong><span className="mt-1 block text-xs text-[#80695c]">{story.quantity} books · {story.orderCount} orders</span></div><strong className="shrink-0 text-xs text-[#624b40]">{formatMoney(story.collectedRevenueAmount, 'en')}</strong></div>) : <p className="rounded-2xl bg-[#f8ecdf] p-4 text-sm text-[#624b40]">No story sales yet.</p>}</div></section><section className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5"><div className="flex items-center gap-2"><Tag size={18} className="text-[#a95a39]" /><h3 className="font-serif text-2xl">Promo results</h3></div><div className="mt-4 space-y-3">{report.promoPerformance.length ? report.promoPerformance.slice(0, 5).map((promo) => <div key={promo.code} className="rounded-2xl bg-[#f8ecdf] p-3"><div className="flex justify-between gap-3"><strong>{promo.code}</strong><span className="text-xs font-bold text-[#624b40]">{promo.redemptions} uses</span></div><p className="mt-2 text-xs text-[#80695c]">{formatMoney(promo.discountAmount, 'en')} discounted · {formatMoney(promo.orderValueAmount, 'en')} order value</p></div>) : <p className="rounded-2xl bg-[#f8ecdf] p-4 text-sm text-[#624b40]">No promo redemptions in this period.</p>}</div></section><section className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5"><div className="flex items-center gap-2"><Truck size={18} className="text-[#a95a39]" /><h3 className="font-serif text-2xl">Governorates</h3></div><div className="mt-4 space-y-3">{report.governorates.length ? report.governorates.slice(0, 5).map((governorate) => <div key={governorate.governorateName} className="rounded-2xl bg-[#f8ecdf] p-3"><div className="flex justify-between gap-3"><strong>{governorate.governorateName}</strong><span className="text-xs font-bold text-[#624b40]">{governorate.orderCount} orders</span></div><p className="mt-2 text-xs text-[#80695c]">{formatMoney(governorate.totalAmount, 'en')} value · {formatMoney(governorate.shippingFeeAmount, 'en')} shipping</p></div>) : <p className="rounded-2xl bg-[#f8ecdf] p-4 text-sm text-[#624b40]">No delivery data in this period.</p>}</div></section></div>
+      <p className="mt-4 text-xs leading-5 text-[#80695c]">Reports intentionally exclude customer contact details and private media. Collected revenue reflects recorded payment only; accepted order value and outstanding COD are shown separately.</p></> : null}
   </section>
 }
 
@@ -418,6 +439,108 @@ function OrdersPanel() {
     {ordersQuery.isLoading ? <div className="h-64 animate-pulse rounded-3xl bg-[#f2e4d6]" /> : null}
     {ordersQuery.data ? <div className="overflow-hidden rounded-3xl border border-[#2c1c14]/10 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#f8ecdf] text-xs uppercase tracking-wide text-[#624b40]"><tr><th className="px-5 py-3">Order</th><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Stories</th><th className="px-5 py-3">Total</th><th className="px-5 py-3">Status</th><th className="px-5 py-3" /></tr></thead><tbody>{ordersQuery.data.orders.map((order) => <tr key={order.orderNumber} className="border-t border-[#2c1c14]/8"><td className="px-5 py-4"><strong>{order.orderNumber}</strong><span className="mt-1 block text-xs text-[#80695c]">{formatDate(order.createdAt, 'en')}</span></td><td className="px-5 py-4"><strong>{order.customerName}</strong><span className="mt-1 block text-xs text-[#80695c]">{order.phone}</span></td><td className="max-w-52 px-5 py-4 text-[#624b40]">{order.itemTitles.join(' · ')}</td><td className="px-5 py-4 font-bold text-[#a95a39]">{formatMoney(order.totalAmount, 'en')}</td><td className="px-5 py-4"><span className="rounded-full bg-[#f8ecdf] px-3 py-1 text-xs font-bold">{orderStatusLabel(order.status, 'en')}</span></td><td className="px-5 py-4"><AdminButton variant="secondary" className="px-3 py-2" onClick={() => setSelectedOrder(order.orderNumber)}>Review</AdminButton></td></tr>)}</tbody></table></div>{ordersQuery.data.orders.length === 0 ? <p className="p-8 text-center text-[#624b40]">No orders match this view yet.</p> : null}</div> : null}
     {selectedOrder ? <OrderDetail orderNumber={selectedOrder} onClose={() => setSelectedOrder(null)} onChanged={() => void client.invalidateQueries({ queryKey: ['admin-orders'] })} /> : null}
+  </section>
+}
+
+type RecoveryFilterState = 'all' | 'open' | 'contacted' | 'closed' | 'converted'
+
+function recoveryStateLabel(state: RecoveryFilterState) {
+  return {
+    all: 'All saved carts',
+    open: 'New',
+    contacted: 'Contacted',
+    closed: 'Closed',
+    converted: 'Converted',
+  }[state]
+}
+
+function recoveryStateTone(state: RecoveryFilterState) {
+  return {
+    all: 'bg-[#f8ecdf] text-[#624b40]',
+    open: 'bg-amber-50 text-amber-900',
+    contacted: 'bg-sky-50 text-sky-800',
+    closed: 'bg-slate-100 text-slate-700',
+    converted: 'bg-emerald-50 text-emerald-800',
+  }[state]
+}
+
+function recoveryCartValue(lead: AdminRecoveryLead) {
+  return lead.recovery.items.reduce((total, item) => (
+    total + ((item.salePriceAmount ?? item.basePriceAmount) + item.addons.reduce((addons, addon) => addons + addon.priceAmount, 0)) * item.quantity
+  ), 0)
+}
+
+/**
+ * This queue intentionally presents only the encrypted recovery
+ * snapshot. It does not offer an order editor, private media, full address,
+ * child data, or automatic outreach.
+ */
+function RecoveryPanel() {
+  const client = useQueryClient()
+  const [state, setState] = useState<RecoveryFilterState>('open')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [workingId, setWorkingId] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const filtersValid = !from || !to || from <= to
+  const leadsQuery = useQuery({
+    queryKey: ['admin-recovery', state, from, to],
+    queryFn: () => getAdminRecoveryLeads({ state, from: from || undefined, to: to || undefined }),
+    enabled: filtersValid,
+    retry: false,
+  })
+  const updateState = async (lead: AdminRecoveryLead, nextState: 'open' | 'contacted' | 'closed') => {
+    if (lead.state === nextState || workingId) return
+    setWorkingId(lead.id)
+    setMessage(null)
+    try {
+      await updateAdminRecoveryLeadState(lead.id, nextState)
+      await client.invalidateQueries({ queryKey: ['admin-recovery'] })
+    } catch (error) {
+      setMessage(errorMessage(error))
+    } finally {
+      setWorkingId(null)
+    }
+  }
+
+  return <section>
+    <PanelHeading eyebrow="Checkout recovery" title="Saved carts" />
+    <div className="mb-5 rounded-3xl border border-[#2c1c14]/10 bg-white p-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="block text-sm font-bold">Status<select className="mt-2 block rounded-xl border border-[#2c1c14]/15 bg-white px-3 py-2.5 text-sm" value={state} onChange={(event) => setState(event.target.value as RecoveryFilterState)}>{(['open', 'contacted', 'closed', 'converted', 'all'] as const).map((option) => <option key={option} value={option}>{recoveryStateLabel(option)}</option>)}</select></label>
+        <label className="block text-sm font-bold">From<AdminInput className="mt-2" type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} /></label>
+        <label className="block text-sm font-bold">To<AdminInput className="mt-2" type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} /></label>
+        <p className="max-w-xl pb-2 text-xs leading-5 text-[#80695c]">Eligible checkout details are saved after a 60-minute inactive draft expires. Leads expire after 30 days; contact them manually and never request child details, photos, payment proof, or a full address.</p>
+      </div>
+      {!filtersValid ? <p className="mt-3 text-sm font-semibold text-red-700" role="alert">The end date must be on or after the start date.</p> : null}
+    </div>
+    {message ? <div className="mb-5"><FormMessage>{message}</FormMessage></div> : null}
+    {leadsQuery.isLoading ? <div className="h-64 animate-pulse rounded-3xl bg-[#f2e4d6]" /> : null}
+    {leadsQuery.isError ? <FormMessage>{errorMessage(leadsQuery.error)}</FormMessage> : null}
+    {leadsQuery.data ? <div className="grid gap-4 xl:grid-cols-2">
+      {leadsQuery.data.leads.map((lead) => {
+        const recovery = lead.recovery
+        const canChangeState = lead.state !== 'converted'
+        return <article key={lead.id} className="rounded-3xl border border-[#2c1c14]/10 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${recoveryStateTone(lead.state)}`}>{recoveryStateLabel(lead.state)}</span>
+              <p className="mt-3 text-sm text-[#624b40]">Saved {formatDate(lead.createdAt, 'en')} · expires {formatDate(lead.expiresAt, 'en')}</p>
+              {lead.state === 'converted' && lead.convertedOrderNumber ? <p className="mt-1 text-sm font-bold text-emerald-800">Converted to {lead.convertedOrderNumber}</p> : null}
+            </div>
+            {canChangeState ? <label className="text-xs font-bold text-[#624b40]">Workflow<select disabled={workingId === lead.id} value={lead.state} onChange={(event) => void updateState(lead, event.target.value as 'open' | 'contacted' | 'closed')} className="mt-1 block rounded-xl border border-[#2c1c14]/15 bg-white px-2.5 py-2 text-sm font-bold text-[#2c1c14]"><option value="open">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></label> : null}
+          </div>
+          <section className="mt-4 rounded-2xl bg-[#f8ecdf] p-3.5 text-sm">
+            <div className="flex flex-wrap items-center gap-2"><strong dir="ltr">{recovery.contact.phone}</strong>{recovery.contact.email ? <span className="text-[#80695c]" dir="ltr">{recovery.contact.email}</span> : null}</div>
+            <div className="mt-3 flex flex-wrap gap-2"><a className="rounded-xl border border-[#a95a39]/25 bg-white px-3 py-2 text-xs font-bold text-[#a95a39]" href={`tel:${recovery.contact.phone}`}>Call</a>{recovery.contact.email ? <a className="rounded-xl border border-[#a95a39]/25 bg-white px-3 py-2 text-xs font-bold text-[#a95a39]" href={`mailto:${recovery.contact.email}`}>Email</a> : null}</div>
+          </section>
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><p><span className="block text-xs font-bold uppercase tracking-wide text-[#80695c]">Delivery area</span><strong className="mt-1 block">{[recovery.delivery.city, recovery.delivery.governorateCode].filter(Boolean).join(', ') || 'Not saved'}</strong></p><p><span className="block text-xs font-bold uppercase tracking-wide text-[#80695c]">Payment choice</span><strong className="mt-1 block">{paymentPlanLabel(recovery.checkout.paymentPlan) ?? 'Not selected'}{recovery.checkout.paymentMethod ? ` · ${paymentMethodLabel(recovery.checkout.paymentMethod)}` : ''}</strong></p></div>
+          <div className="mt-4 border-t border-[#2c1c14]/10 pt-4"><div className="flex items-baseline justify-between gap-3"><h3 className="font-serif text-lg">Saved product summary</h3><strong className="text-[#a95a39]">{formatMoney(recoveryCartValue(lead), 'en')}</strong></div><ul className="mt-3 space-y-2 text-sm text-[#624b40]">{recovery.items.map((item) => <li key={`${lead.id}:${item.productId}`}><strong>{item.productTitle} × {item.quantity}</strong>{item.addons.length ? <span className="text-[#80695c]"> · {item.addons.map((addon) => addon.name).join(', ')}</span> : null}</li>)}</ul></div>
+          <p className="mt-4 text-xs leading-5 text-[#80695c]">This view intentionally excludes the recipient name, child and personalization details, photos, full address, notes, and payment proof.</p>
+        </article>
+      })}
+      {leadsQuery.data.leads.length === 0 ? <div className="col-span-full rounded-3xl bg-[#f8ecdf] p-8 text-center text-sm leading-6 text-[#624b40]">No saved carts match this view. New leads appear after an eligible checkout has been inactive for 60 minutes.</div> : null}
+    </div> : null}
   </section>
 }
 
@@ -444,10 +567,81 @@ function OrderDetail({ orderNumber, onClose, onChanged }: { orderNumber: string;
   return <div className="fixed inset-0 z-50 overflow-y-auto bg-[#2c1c14]/35 p-4 sm:p-8"><section className="mx-auto max-w-5xl rounded-[2rem] bg-[#fffaf4] p-6 shadow-2xl sm:p-8">{detailQuery.isLoading ? <AdminLoading /> : null}{detail ? <OrderDetailBody detail={detail} nextStatus={nextStatus} setNextStatus={setNextStatus} customerNote={customerNote} setCustomerNote={setCustomerNote} internalNote={internalNote} setInternalNote={setInternalNote} working={working} message={message} onClose={onClose} onChangeStatus={() => void changeStatus()} onAddNote={() => void addNote()} /> : null}</section></div>
 }
 
+type FuturePaymentFields = {
+  paymentPlan?: string | null
+  paymentStatus?: string | null
+  instapayDiscountAmount?: number | null
+  amountDueNow?: number | null
+  amountPaid?: number | null
+  amountDueOnDelivery?: number | null
+}
+
+type PresentableOrder = AdminOrderDetail['order'] & FuturePaymentFields
+
+function presentableOrder(order: AdminOrderDetail['order']) {
+  return order as PresentableOrder
+}
+
+function optionalAmount(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function paymentMethodLabel(paymentMethod: string) {
+  const labels: Record<string, string> = {
+    instapay: 'InstaPay',
+    mobile_wallet: 'Mobile wallet',
+    cash_on_delivery: 'Cash on delivery',
+    cod: 'Cash on delivery',
+  }
+  return labels[paymentMethod] ?? paymentMethod.replaceAll('_', ' ')
+}
+
+function paymentPlanLabel(paymentPlan: string | null) {
+  const labels: Record<string, string> = {
+    full_upfront: 'Full payment upfront',
+    personalized_deposit_cod: '50% personalized deposit + COD',
+    cash_on_delivery: 'Cash on delivery',
+  }
+  return paymentPlan ? labels[paymentPlan] ?? paymentPlan.replaceAll('_', ' ') : null
+}
+
+function paymentStatusLabel(paymentStatus: string | null) {
+  const labels: Record<string, string> = {
+    payment_submitted: 'Payment proof under review',
+    payment_pending: 'Payment pending',
+    payment_confirmed: 'Payment confirmed',
+    deposit_submitted: 'Deposit proof under review',
+    deposit_pending: 'Deposit pending',
+    deposit_confirmed: 'Deposit confirmed',
+    cod_pending_confirmation: 'Awaiting COD confirmation',
+    cod_due: 'Cash due on delivery',
+    cash_collected: 'Cash collected',
+    paid: 'Paid in full',
+  }
+  return paymentStatus ? labels[paymentStatus] ?? paymentStatus.replaceAll('_', ' ') : null
+}
+
+function PaymentTotals({ order: rawOrder }: { order: AdminOrderDetail['order'] }) {
+  const order = presentableOrder(rawOrder)
+  const paymentPlan = typeof order.paymentPlan === 'string' ? order.paymentPlan : null
+  const paymentStatus = typeof order.paymentStatus === 'string' ? order.paymentStatus : null
+  const instapayDiscountAmount = optionalAmount(order.instapayDiscountAmount)
+  const amountPaid = optionalAmount(order.amountPaid)
+  const isCod = paymentPlan === 'cash_on_delivery' || paymentPlan === 'personalized_deposit_cod' || order.paymentMethod === 'cash_on_delivery' || order.paymentMethod === 'cod'
+  const amountDueNow = optionalAmount(order.amountDueNow) ?? (paymentPlan === 'full_upfront' ? order.totalAmount : null)
+  const amountDueOnDelivery = optionalAmount(order.amountDueOnDelivery) ?? (paymentPlan === 'cash_on_delivery' ? order.totalAmount : null)
+  const hasPaymentSchedule = paymentPlan !== null || paymentStatus !== null || amountDueNow !== null || amountPaid !== null || amountDueOnDelivery !== null
+  const awaitingCodConfirmation = isCod && order.status === 'cod_pending_confirmation'
+  const cashCollectionRecorded = isCod && (paymentStatus === 'cash_collected' || (order.status === 'delivered' && amountDueOnDelivery === 0))
+
+  return <section className="rounded-2xl bg-[#f8ecdf] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-serif text-xl">Payment and totals</h4>{paymentPlanLabel(paymentPlan) ? <p className="mt-1 text-xs font-bold text-[#80695c]">{paymentPlanLabel(paymentPlan)}</p> : null}</div>{paymentStatusLabel(paymentStatus) ? <span className={`rounded-full px-3 py-1 text-xs font-bold ${cashCollectionRecorded ? 'bg-emerald-100 text-emerald-800' : awaitingCodConfirmation ? 'bg-amber-100 text-amber-900' : 'bg-white text-[#624b40]'}`}>{paymentStatusLabel(paymentStatus)}</span> : null}</div><div className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-4"><span>Method</span><strong className="text-right">{paymentMethodLabel(order.paymentMethod)}</strong></div><div className="flex justify-between gap-4"><span>Subtotal</span><strong>{formatMoney(order.subtotalAmount, 'en')}</strong></div><div className="flex justify-between gap-4"><span>Promo</span><strong>−{formatMoney(order.promoDiscountAmount, 'en')}</strong></div>{instapayDiscountAmount !== null && instapayDiscountAmount > 0 ? <div className="flex justify-between gap-4 text-emerald-800"><span>InstaPay saving</span><strong>−{formatMoney(instapayDiscountAmount, 'en')}</strong></div> : null}<div className="flex justify-between gap-4"><span>Shipping</span><strong>{formatMoney(order.shippingFeeAmount, 'en')}</strong></div><div className="flex justify-between gap-4 border-t border-[#2c1c14]/10 pt-2 text-base"><span>Full order total</span><strong className="text-[#a95a39]">{formatMoney(order.totalAmount, 'en')}</strong></div></div>{hasPaymentSchedule ? <div className="mt-4 grid gap-2 border-t border-[#2c1c14]/10 pt-4 text-sm"><div className="flex items-center justify-between gap-4 rounded-xl bg-white/75 px-3 py-2.5"><span className="font-medium text-[#624b40]">Due now</span><strong>{amountDueNow === null ? '—' : formatMoney(amountDueNow, 'en')}</strong></div><div className="flex items-center justify-between gap-4 rounded-xl bg-emerald-50 px-3 py-2.5 text-emerald-900"><span className="font-medium">Paid / deposit received</span><strong>{amountPaid === null ? 'Not recorded' : formatMoney(amountPaid, 'en')}</strong></div>{isCod && amountDueOnDelivery !== null ? <div className="flex items-center justify-between gap-4 rounded-xl bg-amber-50 px-3 py-2.5 text-amber-950"><span className="font-medium">Cash on delivery</span><strong>{formatMoney(amountDueOnDelivery, 'en')}</strong></div> : null}</div> : null}{awaitingCodConfirmation ? <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-950">Awaiting confirmation before fulfillment. Review the delivery details, then set status to In production (or Shipped) below to confirm the COD order.</p> : null}{cashCollectionRecorded ? <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2.5 text-xs leading-5 text-emerald-900">Cash collection has been recorded for this order.</p> : null}</section>
+}
+
 /** @deprecated Kept as an exported fallback while order-review sections are migrated. */
 export function LegacyOrderDetailBody({ detail, nextStatus, setNextStatus, customerNote, setCustomerNote, internalNote, setInternalNote, working, message, onClose, onChangeStatus, onAddNote }: { detail: AdminOrderDetail; nextStatus: string; setNextStatus: (value: string) => void; customerNote: string; setCustomerNote: (value: string) => void; internalNote: string; setInternalNote: (value: string) => void; working: boolean; message: string | null; onClose: () => void; onChangeStatus: () => void; onAddNote: () => void }) {
   const { order } = detail
-  return <div><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#a95a39]">Order review</p><h3 className="mt-1 font-serif text-3xl">{order.orderNumber}</h3><p className="mt-2 text-sm text-[#624b40]">Placed {formatDate(order.createdAt, 'en')} · {orderStatusLabel(order.status, 'en')}</p></div><AdminButton variant="secondary" onClick={onClose}>Close</AdminButton></div><div className="mt-7 grid gap-5 lg:grid-cols-[1.15fr_.85fr]"><div className="space-y-5"><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Customer and delivery</h4><div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><p><strong>Customer</strong><br />{order.customerName}<br />{order.email}<br />{order.phone}</p><p><strong>Address</strong><br />{order.governorateName}, {order.city}<br />{order.addressLine1}{order.addressLine2 ? <><br />{order.addressLine2}</> : null}{order.addressNote ? <><br /><span className="text-[#624b40]">{order.addressNote}</span></> : null}</p></div></section><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Personalized books</h4><div className="mt-4 space-y-3">{detail.items.map((item) => <div key={item.id} className="rounded-xl bg-[#fffaf4] p-4 text-sm"><div className="flex justify-between gap-3"><strong>{item.productTitle} × {item.quantity}</strong><strong className="text-[#a95a39]">{formatMoney(item.lineTotalAmount, 'en')}</strong></div><p className="mt-2 text-[#624b40]">Hero: {item.childName} · Story language: {item.storyLanguage}</p>{item.customerNote ? <p className="mt-1 text-[#624b40]">Note: {item.customerNote}</p> : null}{item.addons.length ? <p className="mt-1 text-[#80695c]">Add-ons: {item.addons.map((addon) => addon.addonName).join(', ')}</p> : null}</div>)}</div></section><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Private order media</h4><p className="mt-2 text-sm leading-6 text-[#624b40]">These links are streamed only to this authenticated admin session and are never public Cloudinary URLs.</p><div className="mt-4 flex flex-wrap gap-2">{detail.sensitiveAssets.filter((asset) => !asset.deletedAt).map((asset) => <a key={asset.id} href={asset.downloadPath} target="_blank" rel="noreferrer" className="rounded-xl border border-[#a95a39]/30 bg-[#fffaf4] px-3 py-2 text-sm font-bold text-[#a95a39]">View {asset.kind === 'payment_proof' ? 'payment proof' : 'child photo'}</a>)}</div>{detail.sensitiveAssets.every((asset) => asset.deletedAt) ? <p className="mt-3 text-sm text-[#80695c]">Private media has been removed.</p> : null}</section></div><aside className="space-y-5"><section className="rounded-2xl bg-[#f8ecdf] p-5"><h4 className="font-serif text-xl">Payment and totals</h4><div className="mt-4 space-y-2 text-sm"><div className="flex justify-between"><span>Method</span><strong>{order.paymentMethod.replaceAll('_', ' ')}</strong></div><div className="flex justify-between"><span>Subtotal</span><strong>{formatMoney(order.subtotalAmount, 'en')}</strong></div><div className="flex justify-between"><span>Promo</span><strong>−{formatMoney(order.promoDiscountAmount, 'en')}</strong></div><div className="flex justify-between"><span>Shipping</span><strong>{formatMoney(order.shippingFeeAmount, 'en')}</strong></div><div className="flex justify-between border-t border-[#2c1c14]/10 pt-2 text-base"><span>Total</span><strong className="text-[#a95a39]">{formatMoney(order.totalAmount, 'en')}</strong></div></div></section><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Update status</h4><select value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} className="mt-4 w-full rounded-xl border border-[#2c1c14]/15 bg-white px-3 py-2.5 text-sm">{ORDER_STATUSES.map((status) => <option key={status} value={status}>{orderStatusLabel(status, 'en')}</option>)}</select><AdminTextarea className="mt-3" rows={3} placeholder="Optional customer-visible note" value={customerNote} onChange={(event) => setCustomerNote(event.target.value)} /><AdminButton className="mt-3 w-full" disabled={working || nextStatus === order.status} onClick={onChangeStatus}><Save size={16} /> Save status</AdminButton>{order.sensitiveDataPurgeAt ? <p className="mt-3 text-xs leading-5 text-[#80695c]">Private media purge is scheduled for {formatDate(order.sensitiveDataPurgeAt, 'en')}.</p> : null}</section><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Internal notes</h4><AdminTextarea className="mt-3" rows={3} placeholder="Visible only to admin" value={internalNote} onChange={(event) => setInternalNote(event.target.value)} /><AdminButton className="mt-3 w-full" variant="secondary" disabled={working || !internalNote.trim()} onClick={onAddNote}><Plus size={16} /> Add note</AdminButton><div className="mt-4 space-y-3">{detail.internalNotes.map((note) => <div key={note.id} className="rounded-xl bg-[#f8ecdf] p-3 text-sm"><p>{note.body}</p><span className="mt-2 block text-xs text-[#80695c]">{formatDate(note.createdAt, 'en')}</span></div>)}</div></section>{message ? <FormMessage>{message}</FormMessage> : null}</aside></div></div>
+  const statusOptions = [order.status, ...detail.allowedNextStatuses]
+  return <div><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#a95a39]">Order review</p><h3 className="mt-1 font-serif text-3xl">{order.orderNumber}</h3><p className="mt-2 text-sm text-[#624b40]">Placed {formatDate(order.createdAt, 'en')} · {orderStatusLabel(order.status, 'en')}</p></div><AdminButton variant="secondary" onClick={onClose}>Close</AdminButton></div><div className="mt-7 grid gap-5 lg:grid-cols-[1.15fr_.85fr]"><div className="space-y-5"><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Customer and delivery</h4><div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><p><strong>Customer</strong><br />{order.customerName}<br />{order.email}<br />{order.phone}</p><p><strong>Address</strong><br />{order.governorateName}, {order.city}<br />{order.addressLine1}{order.addressLine2 ? <><br />{order.addressLine2}</> : null}{order.addressNote ? <><br /><span className="text-[#624b40]">{order.addressNote}</span></> : null}</p></div></section><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Personalized books</h4><div className="mt-4 space-y-3">{detail.items.map((item) => <div key={item.id} className="rounded-xl bg-[#fffaf4] p-4 text-sm"><div className="flex justify-between gap-3"><strong>{item.productTitle} × {item.quantity}</strong><strong className="text-[#a95a39]">{formatMoney(item.lineTotalAmount, 'en')}</strong></div><p className="mt-2 text-[#624b40]">Hero: {item.childName} · Story language: {item.storyLanguage}</p>{item.customerNote ? <p className="mt-1 text-[#624b40]">Note: {item.customerNote}</p> : null}{item.addons.length ? <p className="mt-1 text-[#80695c]">Add-ons: {item.addons.map((addon) => addon.addonName).join(', ')}</p> : null}</div>)}</div></section><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Private order media</h4><p className="mt-2 text-sm leading-6 text-[#624b40]">These links are streamed only to this authenticated admin session and are never public Cloudinary URLs.</p><div className="mt-4 flex flex-wrap gap-2">{detail.sensitiveAssets.filter((asset) => !asset.deletedAt).map((asset) => <a key={asset.id} href={asset.downloadPath} target="_blank" rel="noreferrer" className="rounded-xl border border-[#a95a39]/30 bg-[#fffaf4] px-3 py-2 text-sm font-bold text-[#a95a39]">View {asset.kind === 'payment_proof' ? 'payment proof' : 'child photo'}</a>)}</div>{detail.sensitiveAssets.every((asset) => asset.deletedAt) ? <p className="mt-3 text-sm text-[#80695c]">Private media has been removed.</p> : null}</section></div><aside className="space-y-5"><PaymentTotals order={order} /><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Update status</h4><select value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} className="mt-4 w-full rounded-xl border border-[#2c1c14]/15 bg-white px-3 py-2.5 text-sm">{statusOptions.map((status) => <option key={status} value={status}>{orderStatusLabel(status, 'en')}</option>)}</select><AdminTextarea className="mt-3" rows={3} placeholder="Optional customer-visible note" value={customerNote} onChange={(event) => setCustomerNote(event.target.value)} /><AdminButton className="mt-3 w-full" disabled={working || nextStatus === order.status} onClick={onChangeStatus}><Save size={16} /> Save status</AdminButton>{order.sensitiveDataPurgeAt ? <p className="mt-3 text-xs leading-5 text-[#80695c]">Private media purge is scheduled for {formatDate(order.sensitiveDataPurgeAt, 'en')}.</p> : null}</section><section className="rounded-2xl border border-[#2c1c14]/10 bg-white p-5"><h4 className="font-serif text-xl">Internal notes</h4><AdminTextarea className="mt-3" rows={3} placeholder="Visible only to admin" value={internalNote} onChange={(event) => setInternalNote(event.target.value)} /><AdminButton className="mt-3 w-full" variant="secondary" disabled={working || !internalNote.trim()} onClick={() => void onAddNote()}><Plus size={16} /> Add note</AdminButton><div className="mt-4 space-y-3">{detail.internalNotes.map((note) => <div key={note.id} className="rounded-xl bg-[#f8ecdf] p-3 text-sm"><p>{note.body}</p><span className="mt-2 block text-xs text-[#80695c]">{formatDate(note.createdAt, 'en')}</span></div>)}</div></section>{message ? <FormMessage>{message}</FormMessage> : null}</aside></div></div>
 }
 
 function PersonalizationValue({ value, purgedAt }: { value: string | number | string[] | null; purgedAt?: string | null }) {
@@ -793,10 +987,17 @@ function PromoEditor({ promo, onClose }: { promo: AdminPromoCode | null; onClose
   return <WorkspaceDialog title={promo ? `Edit ${promo.code}` : 'New promo code'} onRequestClose={requestClose}><section className="min-h-full rounded-[2rem] border border-[#2c1c14]/10 bg-white p-6"><div className="sticky top-0 z-10 -mx-6 -mt-6 flex flex-wrap items-start justify-between gap-4 border-b border-[#2c1c14]/10 bg-white px-6 py-4"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-[#a95a39]">Promotion editor</p><h3 className="mt-1 font-serif text-3xl">{promo ? `Edit ${promo.code}` : 'New promo code'}</h3></div><div className="flex gap-2"><AdminButton variant="secondary" onClick={requestClose}>Cancel</AdminButton>{promo?.isActive ? <AdminButton variant="danger" disabled={saving} onClick={() => void deactivate()}>Deactivate</AdminButton> : null}<AdminButton disabled={saving} onClick={() => void save()}><Save size={16} /> Save promo</AdminButton></div></div><div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><label className="block text-sm font-bold">Code<AdminInput className="mt-2" dir="ltr" value={draft.code} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="WELCOME100" /></label><label className="block text-sm font-bold">Discount (EGP)<AdminInput className="mt-2" type="number" min="0" step="0.01" value={moneyToInput(draft.fixedDiscountAmount)} onChange={(event) => setDraft((current) => ({ ...current, fixedDiscountAmount: inputToMoney(event.target.value) }))} /></label><label className="block text-sm font-bold">Minimum subtotal (optional EGP)<AdminInput className="mt-2" type="number" min="0" step="0.01" value={moneyToInput(draft.minimumSubtotalAmount)} onChange={(event) => setDraft((current) => ({ ...current, minimumSubtotalAmount: event.target.value.trim() ? inputToMoney(event.target.value) : null }))} /></label><label className="block text-sm font-bold">Starts (optional)<AdminInput className="mt-2" type="datetime-local" value={datetimeInput(draft.startsAt)} onChange={(event) => setDraft((current) => ({ ...current, startsAt: toIsoOrNull(event.target.value) }))} /></label><label className="block text-sm font-bold">Ends (optional)<AdminInput className="mt-2" type="datetime-local" value={datetimeInput(draft.endsAt)} onChange={(event) => setDraft((current) => ({ ...current, endsAt: toIsoOrNull(event.target.value) }))} /></label><label className="block text-sm font-bold">Maximum uses (optional)<AdminInput className="mt-2" type="number" min="1" value={draft.maxRedemptions ?? ''} onChange={(event) => setDraft((current) => ({ ...current, maxRedemptions: event.target.value.trim() ? Number(event.target.value) : null }))} /></label></div><label className="mt-5 flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={draft.isActive} onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.checked }))} /> Active</label>{message ? <div className="mt-5"><FormMessage>{message}</FormMessage></div> : null}</section></WorkspaceDialog>
 }
 
+function SettingsPanel() {
+  return <section>
+    <PanelHeading eyebrow="Storefront operations" title="Store settings" />
+    <StoreSettingsEditor />
+  </section>
+}
+
 function ContentPanel() {
   return <section>
     <PanelHeading eyebrow="Customer-facing details" title="Store content" />
-    <div className="grid gap-7 xl:grid-cols-[.8fr_1.2fr]"><StoreSettingsEditor /><ContentPagesEditor /></div>
+    <ContentPagesEditor />
     <CommunityContentEditor />
   </section>
 }
@@ -819,6 +1020,7 @@ function normalizeSettings(settings: StorefrontSettings): StoreSettingsDraft {
       ],
     },
     seoDefaults: settings.seoDefaults ?? { title: null, description: null, ogImageUrl: null },
+    tracking: settings.tracking ?? { gtmContainerId: null, ga4MeasurementId: null, metaPixelId: null, tiktokPixelId: null },
   }
 }
 
@@ -841,6 +1043,9 @@ function StoreSettingsEditor() {
 
   const updateAnnouncement = (locale: 'ar' | 'en', changes: Partial<StoreSettingsDraft['announcementBar']['translations'][number]>) => {
     setDraft((current) => current ? { ...current, announcementBar: { ...current.announcementBar, translations: current.announcementBar.translations.map((translation) => translation.locale === locale ? { ...translation, ...changes } : translation) } } : current)
+  }
+  const updateTracking = (key: keyof StoreSettingsDraft['tracking'], value: string) => {
+    setDraft((current) => current ? { ...current, tracking: { ...current.tracking, [key]: value.trim() || null } } : current)
   }
   const save = async () => {
     if (!draft) return
@@ -868,6 +1073,7 @@ function StoreSettingsEditor() {
       <section className="rounded-2xl border border-[#2c1c14]/10 p-4"><h4 className="font-serif text-xl">Checkout and manual payment</h4><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="block text-sm font-bold">Free shipping threshold (EGP)<AdminInput className="mt-2" type="number" min="1" step="0.01" value={threshold} onChange={(event) => setThreshold(event.target.value)} placeholder="Leave blank to disable" /><span className="mt-1 block text-xs text-[#80695c]">Displayed prices already include VAT.</span></label><label className="block text-sm font-bold">Delivery guidance<AdminTextarea className="mt-2" rows={4} value={draft.deliveryGuidance ?? ''} onChange={(event) => setDraft((current) => current ? { ...current, deliveryGuidance: event.target.value || null } : current)} placeholder="What happens after the order is submitted?" /></label></div><label className="mt-4 block text-sm font-bold">Payment guidance<AdminTextarea className="mt-2" rows={3} value={draft.paymentGuidance ?? ''} onChange={(event) => setDraft((current) => current ? { ...current, paymentGuidance: event.target.value || null } : current)} placeholder="Instructions shown before the customer uploads proof." /></label><fieldset className="mt-4 rounded-2xl bg-[#f8ecdf] p-4"><legend className="px-1 font-serif text-lg">Manual transfer details</legend><p className="mb-3 text-xs leading-5 text-[#624b40]">These details appear at checkout. They do not create a payment-gateway connection.</p><label className="block text-sm font-bold">InstaPay<AdminTextarea className="mt-2" rows={3} value={draft.paymentDetails.instapay ?? ''} onChange={(event) => setDraft((current) => current ? { ...current, paymentDetails: { ...current.paymentDetails, instapay: event.target.value || null } } : current)} /></label><label className="mt-3 block text-sm font-bold">Mobile wallet (Vodafone Cash, Orange Money, WE Pay, or Etisalat Cash)<AdminTextarea className="mt-2" rows={3} value={draft.paymentDetails.mobileWallet ?? ''} onChange={(event) => setDraft((current) => current ? { ...current, paymentDetails: { ...current.paymentDetails, mobileWallet: event.target.value || null } } : current)} /></label></fieldset></section>
       <section className="rounded-2xl border border-[#2c1c14]/10 p-4"><div className="flex items-center justify-between gap-4"><div><h4 className="font-serif text-xl">Announcement bar</h4><p className="mt-1 text-sm text-[#624b40]">A short optional message at the top of the storefront.</p></div><label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={draft.announcementBar.isEnabled} onChange={(event) => setDraft((current) => current ? { ...current, announcementBar: { ...current.announcementBar, isEnabled: event.target.checked } } : current)} /> Enabled</label></div><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="block text-sm font-bold">English message<AdminInput className="mt-2" value={draft.announcementBar.translations.find((translation) => translation.locale === 'en')?.text ?? ''} onChange={(event) => updateAnnouncement('en', { text: event.target.value })} /></label><label className="block text-sm font-bold">Arabic message<AdminInput className="mt-2" dir="rtl" value={draft.announcementBar.translations.find((translation) => translation.locale === 'ar')?.text ?? ''} onChange={(event) => updateAnnouncement('ar', { text: event.target.value })} /></label><label className="block text-sm font-bold">English link (optional)<AdminInput className="mt-2" dir="ltr" value={draft.announcementBar.translations.find((translation) => translation.locale === 'en')?.href ?? ''} onChange={(event) => updateAnnouncement('en', { href: event.target.value || null })} placeholder="/stories" /></label><label className="block text-sm font-bold">Arabic link (optional)<AdminInput className="mt-2" dir="ltr" value={draft.announcementBar.translations.find((translation) => translation.locale === 'ar')?.href ?? ''} onChange={(event) => updateAnnouncement('ar', { href: event.target.value || null })} placeholder="/ar/stories" /></label></div></section>
       <section className="rounded-2xl border border-[#2c1c14]/10 p-4"><h4 className="font-serif text-xl">Search and social defaults</h4><p className="mt-1 text-sm text-[#624b40]">Used when a page does not provide its own metadata.</p><div className="mt-4 grid gap-4"><label className="block text-sm font-bold">Default title<AdminInput className="mt-2" value={draft.seoDefaults.title ?? ''} onChange={(event) => setDraft((current) => current ? { ...current, seoDefaults: { ...current.seoDefaults, title: event.target.value || null } } : current)} /></label><label className="block text-sm font-bold">Default description<AdminTextarea className="mt-2" rows={3} value={draft.seoDefaults.description ?? ''} onChange={(event) => setDraft((current) => current ? { ...current, seoDefaults: { ...current.seoDefaults, description: event.target.value || null } } : current)} /></label><label className="block text-sm font-bold">Social image URL<AdminInput className="mt-2" dir="ltr" value={draft.seoDefaults.ogImageUrl ?? ''} onChange={(event) => setDraft((current) => current ? { ...current, seoDefaults: { ...current.seoDefaults, ogImageUrl: event.target.value || null } } : current)} placeholder="https://…" /></label></div></section>
+      <section className="rounded-2xl border border-[#2c1c14]/10 p-4"><h4 className="font-serif text-xl">Analytics & pixels</h4><p className="mt-1 text-sm leading-6 text-[#624b40]">Use provider IDs only. Scripts load only after a visitor opts in; raw header code is intentionally not accepted. If GTM owns GA4, leave the direct GA4 field empty to avoid duplicate events.</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="block text-sm font-bold">GTM container ID<AdminInput className="mt-2" dir="ltr" error={fieldError(fieldErrors, 'tracking.gtmContainerId')} value={draft.tracking.gtmContainerId ?? ''} onChange={(event) => updateTracking('gtmContainerId', event.target.value)} placeholder="GTM-ABC1234" /><FieldMessage>{fieldError(fieldErrors, 'tracking.gtmContainerId')}</FieldMessage></label><label className="block text-sm font-bold">GA4 measurement ID<AdminInput className="mt-2" dir="ltr" error={fieldError(fieldErrors, 'tracking.ga4MeasurementId')} value={draft.tracking.ga4MeasurementId ?? ''} onChange={(event) => updateTracking('ga4MeasurementId', event.target.value)} placeholder="G-ABC1234" /><FieldMessage>{fieldError(fieldErrors, 'tracking.ga4MeasurementId')}</FieldMessage></label><label className="block text-sm font-bold">Meta Pixel ID<AdminInput className="mt-2" dir="ltr" inputMode="numeric" error={fieldError(fieldErrors, 'tracking.metaPixelId')} value={draft.tracking.metaPixelId ?? ''} onChange={(event) => updateTracking('metaPixelId', event.target.value)} placeholder="123456789012345" /><FieldMessage>{fieldError(fieldErrors, 'tracking.metaPixelId')}</FieldMessage></label><label className="block text-sm font-bold">TikTok Pixel ID<AdminInput className="mt-2" dir="ltr" error={fieldError(fieldErrors, 'tracking.tiktokPixelId')} value={draft.tracking.tiktokPixelId ?? ''} onChange={(event) => updateTracking('tiktokPixelId', event.target.value)} placeholder="CABC1234DEF" /><FieldMessage>{fieldError(fieldErrors, 'tracking.tiktokPixelId')}</FieldMessage></label></div></section>
       <AdminButton className="w-full" disabled={saving} onClick={() => void save()}>{saving ? <LoaderCircle className="animate-spin" size={16} /> : <Save size={16} />} Save settings</AdminButton>{message ? <FormMessage kind={message === 'Settings saved.' ? 'success' : 'error'}>{message}</FormMessage> : null}</div>}</section>
 }
 

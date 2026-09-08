@@ -9,6 +9,7 @@ import { HomePage, ShopPage } from './pages/DiscoveryPages'
 import { ProductPage } from './pages/ProductPage'
 import { AdminPage } from './pages/AdminPages'
 import { useStoreLocale } from './lib/locale'
+import { TrackingManager } from './components/TrackingManager'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,7 +26,7 @@ function CartRedirect() {
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><CartProvider><BrowserRouter><Routes>
+  return <QueryClientProvider client={queryClient}><CartProvider><BrowserRouter><TrackingManager /><Routes>
     <Route path="/" element={<StorefrontShell />}>
       <Route index element={<HomePage />} />
       <Route path="stories" element={<ShopPage />} />

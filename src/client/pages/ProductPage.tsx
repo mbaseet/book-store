@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronLeft, LoaderCircle, Upload, X } from 'lucide-react'
@@ -20,6 +20,7 @@ import { FormErrorSummary, FormNotice, InlineFieldError } from '../components/Fo
 import { MarkdownContent } from '../components/MarkdownContent'
 import { ProductGallery } from '../components/ProductGallery'
 import { MintCompanion } from '../components/MintCompanion'
+import { trackCommerceEvent } from '../lib/tracking'
 
 type ProductPurchaseForm = {
   quantity: number
@@ -100,6 +101,7 @@ export function ProductPage() {
   const [dynamicErrors, setDynamicErrors] = useState<Record<string, string>>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
+  const viewedProductKey = useRef<string | null>(null)
   const product = productQuery.data?.product
   const definition = product ? definitionFor(product) : null
   const definitionFields = definition?.fields ?? []
@@ -119,6 +121,18 @@ export function ProductPage() {
     setDynamicValues(initialDynamicAnswers(definition, locale))
     setSubmitError(null)
   }, [definition, locale, personalizationKey, product, reset])
+
+  useEffect(() => {
+    if (!product) return
+    const key = `${locale}:${product.id}`
+    if (viewedProductKey.current === key) return
+    viewedProductKey.current = key
+    const priceAmount = product.salePriceAmount ?? product.basePriceAmount
+    trackCommerceEvent('view_item', {
+      items: [{ itemId: product.id, quantity: 1, priceAmount }],
+      valueAmount: priceAmount,
+    })
+  }, [locale, product])
 
   const updateDynamicValue = (key: string, value: string) => {
     setDynamicValues((current) => ({ ...current, [key]: value }))
@@ -279,6 +293,10 @@ export function ProductPage() {
         ...baseInput,
         personalization: dynamicValidation.answers,
       })
+      trackCommerceEvent('add_to_cart', {
+        items: [{ itemId: product.id, quantity: baseInput.quantity, priceAmount: unitPrice }],
+        valueAmount: unitPrice * baseInput.quantity,
+      })
       replaceItems(draft.draft.items)
       await queryClient.invalidateQueries({ queryKey: ['checkout-draft', locale] })
       navigate(localizedPath('/checkout'))
@@ -330,19 +348,24 @@ export function ProductPage() {
             </fieldset>
           ) : <p className="rounded-2xl bg-[#9FD9C2]/25 p-4 text-sm font-semibold leading-6 text-[#175451]">{text('هذا منتج جاهز للشحن، لذا يمكنك المتابعة مباشرة إلى بيانات التوصيل والدفع.', 'This item is ready to ship, so you can continue straight to delivery and payment.')}</p>}
 
-          {photoConfiguration ? <PhotoField
-            id={fieldId(configuredPhotoField?.key ?? 'photos')}
-            label={fieldText(configuredPhotoField?.label, locale)}
-            help={fieldText(configuredPhotoField?.help, locale)}
-            required={Boolean(configuredPhotoField?.required)}
-            minimum={photoConfiguration.minimum}
-            maximum={photoConfiguration.maximum}
-            files={files}
-            error={photoError}
-            text={text}
-            onChange={selectFiles}
-            onRemove={removeFile}
-          /> : null}
+          {photoConfiguration ? <>
+            <div className="rounded-2xl bg-[#FAF8F3] p-2">
+              <img src="/brand/how-it-works-personalize.png" alt={text('ارفع صورة وابدأ تخصيص هديتك', 'Upload a photo to personalize your gift')} className="mx-auto h-36 w-full object-contain sm:h-44" loading="lazy" />
+            </div>
+            <PhotoField
+              id={fieldId(configuredPhotoField?.key ?? 'photos')}
+              label={fieldText(configuredPhotoField?.label, locale)}
+              help={fieldText(configuredPhotoField?.help, locale)}
+              required={Boolean(configuredPhotoField?.required)}
+              minimum={photoConfiguration.minimum}
+              maximum={photoConfiguration.maximum}
+              files={files}
+              error={photoError}
+              text={text}
+              onChange={selectFiles}
+              onRemove={removeFile}
+            />
+          </> : null}
 
           {product.addons.length > 0 ? <fieldset><legend className="text-xl font-black text-[#075f5b]">{text('إضافات اختيارية', 'Optional add-ons')}</legend><div className="mt-3 space-y-2">{product.addons.map((addon) => <label key={addon.id} className="flex cursor-pointer items-center justify-between rounded-2xl border border-[#0D7D78]/10 bg-[#FAF8F3] p-4 transition hover:border-[#0D7D78]/40"><span className="flex items-center gap-3"><input type="checkbox" checked={selectedAddonIds.includes(addon.id)} onChange={() => setSelectedAddonIds((current) => current.includes(addon.id) ? current.filter((id) => id !== addon.id) : [...current, addon.id])} /><span><strong className="block">{addon.name}</strong>{addon.description ? <small className="text-[#47716e]">{addon.description}</small> : null}</span></span><span className="font-black text-[#0D7D78]">+{formatMoney(addon.priceAmount, locale)}</span></label>)}</div></fieldset> : null}
 

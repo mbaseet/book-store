@@ -5,6 +5,10 @@ ENVIRONMENT=development
 APP_BASE_URL=http://localhost:5173
 
 SESSION_SECRET=replace-with-at-least-32-random-characters
+# Required when locally testing the 30-day saved-cart recovery flow. Use a
+# separate 32+ character value; do not rotate it while leads are retained, or
+# existing encrypted recovery snapshots become unreadable.
+ABANDONED_CART_ENCRYPTION_SECRET=replace-with-at-least-32-random-characters
 ADMIN_BOOTSTRAP_TOKEN=replace-with-a-strong-random-token
 
 # Leave unset for normal local/production use. The isolated Free-plan staging

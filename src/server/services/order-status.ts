@@ -5,6 +5,7 @@ const allowedNextStatuses: Record<OrderStatus, readonly OrderStatus[]> = {
   action_required: ['payment_submitted', 'payment_confirmed', 'payment_rejected', 'cancelled'],
   payment_rejected: ['payment_submitted', 'cancelled'],
   payment_confirmed: ['in_production', 'cancelled'],
+  cod_pending_confirmation: ['in_production', 'shipped', 'cancelled'],
   in_production: ['shipped', 'cancelled'],
   shipped: ['delivered'],
   delivered: [],

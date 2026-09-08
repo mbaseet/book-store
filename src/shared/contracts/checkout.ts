@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PAYMENT_METHODS, STORY_LANGUAGES } from '@shared/constants'
+import { PAYMENT_METHODS, PAYMENT_PLANS, STORY_LANGUAGES } from '@shared/constants'
 
 export const moneyAmountSchema = z.number().int().nonnegative()
 
@@ -66,6 +66,9 @@ export const checkoutDraftDeliveryInputSchema = z.object({
   addressLine2: z.string().trim().max(250),
   addressNote: z.string().trim().max(500),
   paymentMethod: z.union([z.enum(PAYMENT_METHODS), z.literal('')]),
+  // Defaults keep already-encrypted 60-minute drafts readable after the
+  // payment-plan rollout. New clients always send an explicit choice.
+  paymentPlan: z.union([z.enum(PAYMENT_PLANS), z.literal('')]).default(''),
   promoCode: z.string().trim().max(40),
   // The text box is saved independently from the code the customer explicitly
   // applied to the quote, so a refresh never turns an un-applied code into a
@@ -87,21 +90,42 @@ export const checkoutQuoteInputSchema = z.object({
   governorateCode: z.string().trim().min(2).max(64),
   promoCode: z.string().trim().min(2).max(40).optional(),
   items: z.array(checkoutQuoteItemSchema).min(1).max(20),
+  paymentPlan: z.enum(PAYMENT_PLANS).optional(),
+  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
 })
 
-export const checkoutInputSchema = z.object({
-  customerName: z.string().trim().min(2).max(120),
-  email: z.string().trim().email().max(254),
-  phone: z.string().trim().min(7).max(30),
-  governorateCode: z.string().trim().min(2).max(64),
-  city: z.string().trim().min(2).max(100),
-  addressLine1: z.string().trim().min(5).max(250),
-  addressLine2: z.string().trim().max(250).optional(),
-  addressNote: z.string().trim().max(500).optional(),
-  paymentMethod: z.enum(PAYMENT_METHODS),
-  paymentProofUpload: checkoutUploadReferenceSchema,
-  promoCode: z.string().trim().min(2).max(40).optional(),
-})
+export const checkoutInputSchema = z
+  .object({
+    customerName: z.string().trim().min(2).max(120),
+    // Guest checkout must not require an email address. An empty value is
+    // normalized to null before order persistence.
+    email: draftEmailSchema,
+    phone: z.string().trim().min(7).max(30),
+    governorateCode: z.string().trim().min(2).max(64),
+    city: z.string().trim().min(2).max(100),
+    addressLine1: z.string().trim().min(5).max(250),
+    addressLine2: z.string().trim().max(250).optional(),
+    addressNote: z.string().trim().max(500).optional(),
+    paymentPlan: z.enum(PAYMENT_PLANS),
+    paymentMethod: z.enum(PAYMENT_METHODS),
+    paymentProofUpload: checkoutUploadReferenceSchema.optional(),
+    promoCode: z.string().trim().min(2).max(40).optional(),
+  })
+  .superRefine((value, context) => {
+    const isCod = value.paymentPlan === 'cash_on_delivery'
+    if (isCod && value.paymentMethod !== 'cash_on_delivery') {
+      context.addIssue({ code: 'custom', path: ['paymentMethod'], message: 'Cash on delivery requires its matching payment method.' })
+    }
+    if (!isCod && value.paymentMethod === 'cash_on_delivery') {
+      context.addIssue({ code: 'custom', path: ['paymentMethod'], message: 'Choose a transfer method for this payment plan.' })
+    }
+    if (isCod && value.paymentProofUpload) {
+      context.addIssue({ code: 'custom', path: ['paymentProofUpload'], message: 'Cash on delivery does not need a payment proof.' })
+    }
+    if (!isCod && !value.paymentProofUpload) {
+      context.addIssue({ code: 'custom', path: ['paymentProofUpload'], message: 'Upload the payment proof to continue.' })
+    }
+  })
 
 export type CheckoutInput = z.infer<typeof checkoutInputSchema>
 export type CheckoutQuoteInput = z.infer<typeof checkoutQuoteInputSchema>

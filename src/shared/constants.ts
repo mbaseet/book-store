@@ -9,6 +9,7 @@ export const ORDER_STATUSES = [
   'payment_confirmed',
   'action_required',
   'payment_rejected',
+  'cod_pending_confirmation',
   'in_production',
   'shipped',
   'delivered',
@@ -16,8 +17,11 @@ export const ORDER_STATUSES = [
 ] as const
 export type OrderStatus = (typeof ORDER_STATUSES)[number]
 
-export const PAYMENT_METHODS = ['instapay', 'mobile_wallet'] as const
+export const PAYMENT_METHODS = ['instapay', 'mobile_wallet', 'cash_on_delivery'] as const
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+
+export const PAYMENT_PLANS = ['full_upfront', 'personalized_deposit_cod', 'cash_on_delivery'] as const
+export type PaymentPlan = (typeof PAYMENT_PLANS)[number]
 
 export const CURRENCY = 'EGP'
 export const DEFAULT_GOVERNORATE_SHIPPING_FEE = 8500

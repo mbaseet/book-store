@@ -106,7 +106,12 @@ adminOrderRoutes.get('/admin/orders', async (context) => {
       customerName: ordersTable.customerName,
       email: ordersTable.email,
       phone: ordersTable.phone,
+      paymentPlan: ordersTable.paymentPlan,
+      paymentStatus: ordersTable.paymentStatus,
       totalAmount: ordersTable.totalAmount,
+      amountDueNow: ordersTable.amountDueNow,
+      amountPaid: ordersTable.amountPaid,
+      amountDueOnDelivery: ordersTable.amountDueOnDelivery,
       currency: ordersTable.currency,
       createdAt: ordersTable.createdAt,
     })
@@ -183,7 +188,11 @@ adminOrderRoutes.get('/admin/orders/:orderNumber', async (context) => {
       .where(eq(orderSensitiveAssetsTable.orderId, order.id)),
   ])
 
+  const currentOrderStatus = isOrderStatus(order.status) ? order.status : null
   return context.json({
+    allowedNextStatuses: currentOrderStatus
+      ? ORDER_STATUSES.filter((candidate) => canTransitionOrderStatus(currentOrderStatus, candidate))
+      : [],
     order: {
       ...order,
       createdAt: order.createdAt.toISOString(),
@@ -264,9 +273,45 @@ adminOrderRoutes.post('/admin/orders/:orderNumber/status', async (context) => {
   const purgeAt = isTerminalOrderStatus(parsed.data.status)
     ? new Date(now.getTime() + RETENTION_AFTER_TERMINAL_MS)
     : null
+  const paymentUpdates: {
+    paymentStatus?: string
+    amountPaid?: number
+    amountDueOnDelivery?: number
+  } = (() => {
+    if (parsed.data.status === 'payment_confirmed') {
+      if (order.paymentPlan === 'personalized_deposit_cod') {
+        return { paymentStatus: 'deposit_confirmed', amountPaid: order.amountDueNow }
+      }
+      return { paymentStatus: 'paid', amountPaid: order.totalAmount }
+    }
+    if (parsed.data.status === 'payment_rejected') {
+      return { paymentStatus: 'payment_rejected', amountPaid: 0 }
+    }
+    if (parsed.data.status === 'payment_submitted') {
+      return {
+        paymentStatus: order.paymentPlan === 'personalized_deposit_cod' ? 'deposit_submitted' : 'payment_submitted',
+        amountPaid: 0,
+      }
+    }
+    if (
+      (parsed.data.status === 'in_production' || parsed.data.status === 'shipped') &&
+      order.paymentStatus === 'cod_pending_confirmation'
+    ) {
+      return { paymentStatus: 'cod_due' }
+    }
+    if (parsed.data.status === 'delivered' && order.amountDueOnDelivery > 0) {
+      return {
+        paymentStatus: 'cash_collected',
+        amountPaid: order.totalAmount,
+        amountDueOnDelivery: 0,
+      }
+    }
+    return {}
+  })()
   const updates = {
     status: parsed.data.status,
     updatedAt: now,
+    ...paymentUpdates,
     ...(purgeAt ? { sensitiveDataPurgeAt: purgeAt } : {}),
   }
   const updateOrder = db.update(ordersTable).set(updates).where(eq(ordersTable.id, order.id))
@@ -292,6 +337,9 @@ adminOrderRoutes.post('/admin/orders/:orderNumber/status', async (context) => {
 
   return context.json({
     status: parsed.data.status,
+    paymentStatus: paymentUpdates.paymentStatus ?? order.paymentStatus,
+    amountPaid: paymentUpdates.amountPaid ?? order.amountPaid,
+    amountDueOnDelivery: paymentUpdates.amountDueOnDelivery ?? order.amountDueOnDelivery,
     sensitiveDataPurgeAt: purgeAt?.toISOString() ?? null,
   })
 })

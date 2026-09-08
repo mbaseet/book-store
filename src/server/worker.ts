@@ -6,6 +6,7 @@ import { adminContentRoutes } from './routes/admin-content'
 import { adminMediaRoutes } from './routes/admin-media'
 import { adminOperationsRoutes } from './routes/admin-operations'
 import { adminOrderRoutes } from './routes/admin-orders'
+import { adminRecoveryRoutes } from './routes/admin-recovery'
 import { adminReportRoutes } from './routes/admin-reports'
 import { checkoutRoutes } from './routes/checkout'
 import { orderRoutes } from './routes/orders'
@@ -13,6 +14,7 @@ import { publicStorefrontRoutes } from './routes/public-storefront'
 import { uploadRoutes } from './routes/uploads'
 import { createDb } from './db'
 import { purgeExpiredCheckoutDrafts } from './services/checkout-drafts'
+import { purgeExpiredAbandonedCheckoutRecoveryLeads } from './services/abandoned-checkout-recovery'
 import {
   purgeDueSensitiveAssets,
   purgeDueSensitivePersonalization,
@@ -43,6 +45,7 @@ app.route('/api', authRoutes)
 app.route('/api', adminCatalogRoutes)
 app.route('/api', adminMediaRoutes)
 app.route('/api', adminOrderRoutes)
+app.route('/api', adminRecoveryRoutes)
 app.route('/api', adminReportRoutes)
 app.route('/api', adminContentRoutes)
 app.route('/api', adminOperationsRoutes)
@@ -83,19 +86,23 @@ export default {
   async scheduled(_event: ScheduledController, env: Bindings, executionContext: ExecutionContext) {
     executionContext.waitUntil(
       (async () => {
-        try {
-          const db = createDb(env)
-          await Promise.all([
-            purgeExpiredCheckoutDrafts(db),
-            purgeExpiredUnclaimedPrivateUploads(db, env),
-          ])
-          // Run the related retention jobs in order so an order is marked
-          // fully purged only after both private media and sensitive answers
-          // have had a chance to complete their work.
-          await purgeDueSensitiveAssets(db, env)
-          await purgeDueSensitivePersonalization(db)
-        } catch {
-          console.error('Scheduled private-media purge failed.')
+        const db = createDb(env)
+        const results = await Promise.allSettled([
+          purgeExpiredCheckoutDrafts(db, env),
+          purgeExpiredUnclaimedPrivateUploads(db, env),
+          // Recovery retention is isolated. Its storage must never delay or suppress
+          // existing child-photo, payment-proof, or personalization purges.
+          purgeExpiredAbandonedCheckoutRecoveryLeads(db),
+          (async () => {
+            // Run the related retention jobs in order so an order is marked
+            // fully purged only after both private media and sensitive answers
+            // have had a chance to complete their work.
+            await purgeDueSensitiveAssets(db, env)
+            await purgeDueSensitivePersonalization(db)
+          })(),
+        ])
+        if (results.some((result) => result.status === 'rejected')) {
+          console.error('Scheduled retention task failed.')
         }
       })(),
     )

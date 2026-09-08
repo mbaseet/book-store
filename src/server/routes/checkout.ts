@@ -11,6 +11,7 @@ import {
 } from '@shared/contracts/checkout'
 import { createDb } from '../db'
 import {
+  checkoutDraftsTable,
   orderItemAddonsTable,
   orderItemsTable,
   orderSensitiveAssetsTable,
@@ -33,6 +34,9 @@ import {
   removeCheckoutDraftItem,
   updateCheckoutDraftDelivery,
 } from '../services/checkout-drafts'
+import {
+  markActionableRecoveryLeadsConverted,
+} from '../services/abandoned-checkout-recovery'
 import {
   claimPrivateCheckoutUpload,
   claimPrivateDraftUpload,
@@ -161,7 +165,7 @@ function draftUploadIdsAreUnique(
 ) {
   const uploadIds = [
     ...draft.payload.items.flatMap((item) => item.childUploadIds),
-    paymentProofUpload.uploadId,
+    ...(paymentProofUpload ? [paymentProofUpload.uploadId] : []),
   ]
   return new Set(uploadIds).size === uploadIds.length
 }
@@ -303,13 +307,24 @@ checkoutRoutes.post('/checkout/quote', async (context) => {
       promoCode,
       governorateShippingFeeAmount: governorate.shippingFeeAmount,
       freeShippingThresholdAmount,
+      paymentPlan: parsed.data.paymentPlan,
+      paymentMethod: parsed.data.paymentMethod,
     })
     return context.json({
       quote: {
         subtotalAmount: pricing.subtotalAmount,
         promoDiscountAmount: pricing.promoDiscountAmount,
+        instapayDiscountAmount: pricing.instapayDiscountAmount,
         shippingFeeAmount: pricing.shippingFeeAmount,
         totalAmount: pricing.totalAmount,
+        totalBeforePaymentDiscountAmount: pricing.totalBeforePaymentDiscountAmount,
+        amountDueNow: pricing.amountDueNow,
+        amountDueOnDelivery: pricing.amountDueOnDelivery,
+        personalizedSubtotalAmount: pricing.personalizedSubtotalAmount,
+        readyToShipSubtotalAmount: pricing.readyToShipSubtotalAmount,
+        paymentPlan: pricing.paymentPlan,
+        paymentMethod: pricing.paymentMethod,
+        paymentEligibility: pricing.paymentEligibility,
         freeShippingApplied: pricing.freeShippingApplied,
         currency: CURRENCY,
       },
@@ -364,7 +379,8 @@ checkoutRoutes.post('/checkout', async (context) => {
   if (parsed.data.promoCode && !promoCode) {
     return errorResponse(context, 422, 'invalid_promo_code', 'This promo code is not available.')
   }
-  if (!configuredPaymentMethods.has(parsed.data.paymentMethod)) {
+  const isCashOnDelivery = parsed.data.paymentPlan === 'cash_on_delivery'
+  if (parsed.data.paymentMethod !== 'cash_on_delivery' && !configuredPaymentMethods.has(parsed.data.paymentMethod)) {
     return errorResponse(context, 422, 'payment_method_unavailable', 'Please choose an available transfer method.')
   }
 
@@ -380,6 +396,8 @@ checkoutRoutes.post('/checkout', async (context) => {
       promoCode,
       governorateShippingFeeAmount: governorate.shippingFeeAmount,
       freeShippingThresholdAmount,
+      paymentPlan: parsed.data.paymentPlan,
+      paymentMethod: parsed.data.paymentMethod,
     })
   } catch (error) {
     if (error instanceof PricingError) {
@@ -412,18 +430,22 @@ checkoutRoutes.post('/checkout', async (context) => {
       }
       childAssetsByItem.push(childAssets)
     }
-    paymentProof = await claimPrivateCheckoutUpload(
-      db,
-      context.env,
-      parsed.data.paymentProofUpload,
-      'payment_proof',
-    )
+    if (parsed.data.paymentProofUpload) {
+      paymentProof = await claimPrivateCheckoutUpload(
+        db,
+        context.env,
+        parsed.data.paymentProofUpload,
+        'payment_proof',
+      )
+    }
   } catch (error) {
     await Promise.allSettled(claimedDraftUploadIds.map((uploadId) => releasePrivateDraftUploadClaim(db, draft.id, uploadId)))
     // Only release the payment proof when this request acquired its claim.
     // Otherwise a concurrent failed request could clear another checkout's
     // successful claim and make the proof reusable.
-    if (paymentProof) await releasePrivateCheckoutUploadClaim(db, parsed.data.paymentProofUpload)
+    if (paymentProof && parsed.data.paymentProofUpload) {
+      await releasePrivateCheckoutUploadClaim(db, parsed.data.paymentProofUpload)
+    }
     const message = error instanceof PrivateUploadError ? error.message : 'An uploaded image could not be verified.'
     return errorResponse(context, 422, 'invalid_upload', message)
   }
@@ -477,23 +499,31 @@ checkoutRoutes.post('/checkout', async (context) => {
         deleteAfter: null,
       })),
     ),
-    {
-      id: crypto.randomUUID(),
-      orderId,
-      orderItemId: null,
-      kind: paymentProof.kind,
-      url: paymentProof.url,
-      cloudinaryPublicId: paymentProof.cloudinaryPublicId,
-      deleteAfter: null,
-    },
+    ...(paymentProof
+      ? [{
+          id: crypto.randomUUID(),
+          orderId,
+          orderItemId: null,
+          kind: paymentProof.kind,
+          url: paymentProof.url,
+          cloudinaryPublicId: paymentProof.cloudinaryPublicId,
+          deleteAfter: null,
+        }]
+      : []),
   ]
+  const initialStatus = isCashOnDelivery ? 'cod_pending_confirmation' : 'payment_submitted'
+  const initialPaymentStatus = isCashOnDelivery
+    ? 'cod_pending_confirmation'
+    : parsed.data.paymentPlan === 'personalized_deposit_cod'
+      ? 'deposit_submitted'
+      : 'payment_submitted'
   const orderRow = {
     id: orderId,
     orderNumber,
     customerAccountId: customer?.id ?? null,
-    status: 'payment_submitted',
+    status: initialStatus,
     customerName: parsed.data.customerName,
-    email: canonicalEmail(parsed.data.email),
+    email: canonicalEmail(parsed.data.email) || null,
     phone: canonicalPhone(parsed.data.phone),
     governorateId: governorate.id,
     governorateName: locale === 'ar' ? governorate.nameAr : governorate.nameEn,
@@ -501,35 +531,49 @@ checkoutRoutes.post('/checkout', async (context) => {
     addressLine1: parsed.data.addressLine1,
     addressLine2: parsed.data.addressLine2 || null,
     addressNote: parsed.data.addressNote || null,
+    paymentPlan: parsed.data.paymentPlan,
     paymentMethod: parsed.data.paymentMethod,
+    paymentStatus: initialPaymentStatus,
     subtotalAmount: pricing.subtotalAmount,
     promoCodeId: promoCode?.id ?? null,
     promoCode: promoCode?.code ?? null,
     promoDiscountAmount: pricing.promoDiscountAmount,
+    instapayDiscountAmount: pricing.instapayDiscountAmount,
     shippingFeeAmount: pricing.shippingFeeAmount,
     freeShippingThresholdAmount,
     totalAmount: pricing.totalAmount,
+    amountDueNow: pricing.amountDueNow,
+    amountPaid: 0,
+    amountDueOnDelivery: pricing.amountDueOnDelivery,
     currency: CURRENCY,
   }
-
+  // This marker joins the same D1 batch as order creation. If later deletion
+  // of the short-lived source draft fails, retention can remove it without
+  // treating a completed checkout as an abandoned-cart recovery lead.
+  const markDraftConsumed = db
+    .update(checkoutDraftsTable)
+    .set({ consumedAt: new Date() })
+    .where(eq(checkoutDraftsTable.id, draft.id))
   let promoReserved = false
   try {
     if (promoCode) {
       promoReserved = await reservePromoRedemption(db, promoCode.id, pricing.subtotalAmount)
       if (!promoReserved) {
         await Promise.allSettled(claimedDraftUploadIds.map((uploadId) => releasePrivateDraftUploadClaim(db, draft.id, uploadId)))
-        await releasePrivateCheckoutUploadClaim(db, parsed.data.paymentProofUpload)
+        if (parsed.data.paymentProofUpload) {
+          await releasePrivateCheckoutUploadClaim(db, parsed.data.paymentProofUpload)
+        }
         return errorResponse(context, 409, 'promo_code_unavailable', 'This promo code is no longer available.')
       }
     }
 
     const insertOrder = db.insert(ordersTable).values(orderRow)
     const insertItems = db.insert(orderItemsTable).values(orderItemRows)
-    const insertAssets = db.insert(orderSensitiveAssetsTable).values(assetRows)
+    const insertAssets = assetRows.length > 0 ? db.insert(orderSensitiveAssetsTable).values(assetRows) : null
     const insertHistory = db.insert(orderStatusHistoryTable).values({
       orderId,
       fromStatus: null,
-      toStatus: 'payment_submitted',
+      toStatus: initialStatus,
       customerVisibleNote: null,
     })
     if (promoCode && addonRows.length > 0) {
@@ -537,8 +581,9 @@ checkoutRoutes.post('/checkout', async (context) => {
         insertOrder,
         insertItems,
         db.insert(orderItemAddonsTable).values(addonRows),
-        insertAssets,
+        ...(insertAssets ? [insertAssets] : []),
         insertHistory,
+        markDraftConsumed,
         db.insert(promoCodeRedemptionsTable).values({
           promoCodeId: promoCode.id,
           orderId,
@@ -549,8 +594,9 @@ checkoutRoutes.post('/checkout', async (context) => {
       await db.batch([
         insertOrder,
         insertItems,
-        insertAssets,
+        ...(insertAssets ? [insertAssets] : []),
         insertHistory,
+        markDraftConsumed,
         db.insert(promoCodeRedemptionsTable).values({
           promoCodeId: promoCode.id,
           orderId,
@@ -558,31 +604,55 @@ checkoutRoutes.post('/checkout', async (context) => {
         }),
       ])
     } else if (addonRows.length > 0) {
-      await db.batch([insertOrder, insertItems, db.insert(orderItemAddonsTable).values(addonRows), insertAssets, insertHistory])
+      await db.batch([
+        insertOrder,
+        insertItems,
+        db.insert(orderItemAddonsTable).values(addonRows),
+        ...(insertAssets ? [insertAssets] : []),
+        insertHistory,
+        markDraftConsumed,
+      ])
     } else {
-      await db.batch([insertOrder, insertItems, insertAssets, insertHistory])
+      await db.batch([
+        insertOrder,
+        insertItems,
+        ...(insertAssets ? [insertAssets] : []),
+        insertHistory,
+        markDraftConsumed,
+      ])
     }
   } catch {
     if (promoReserved && promoCode) await releasePromoReservation(db, promoCode.id)
     await Promise.allSettled(claimedDraftUploadIds.map((uploadId) => releasePrivateDraftUploadClaim(db, draft.id, uploadId)))
-    await releasePrivateCheckoutUploadClaim(db, parsed.data.paymentProofUpload)
+    if (parsed.data.paymentProofUpload) {
+      await releasePrivateCheckoutUploadClaim(db, parsed.data.paymentProofUpload)
+    }
     return errorResponse(context, 500, 'checkout_unavailable', 'Your order could not be submitted. Please try again.')
   }
 
   await Promise.allSettled([
     consumeCheckoutDraft(context, db, draft),
-    consumePrivateCheckoutUpload(db, parsed.data.paymentProofUpload),
+    ...(parsed.data.paymentProofUpload ? [consumePrivateCheckoutUpload(db, parsed.data.paymentProofUpload)] : []),
+    // A recovery conversion is non-blocking. The order has already been
+    // committed, and this update never sends any customer communication.
+    markActionableRecoveryLeadsConverted(db, context.env, orderRow.phone, orderId),
   ])
 
   return context.json(
     {
       order: {
         orderNumber,
-        status: 'payment_submitted',
+        status: initialStatus,
+        paymentPlan: pricing.paymentPlan,
+        paymentStatus: initialPaymentStatus,
         subtotalAmount: pricing.subtotalAmount,
         promoDiscountAmount: pricing.promoDiscountAmount,
+        instapayDiscountAmount: pricing.instapayDiscountAmount,
         shippingFeeAmount: pricing.shippingFeeAmount,
         totalAmount: pricing.totalAmount,
+        amountDueNow: pricing.amountDueNow,
+        amountPaid: 0,
+        amountDueOnDelivery: pricing.amountDueOnDelivery,
         currency: CURRENCY,
       },
     },

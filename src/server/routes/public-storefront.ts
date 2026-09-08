@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { STOREFRONT_LOCALES, type StorefrontLocale } from '@shared/constants'
-import { announcementBarSchema, editablePageKeySchema } from '@shared/contracts/content'
+import { announcementBarSchema, editablePageKeySchema, trackingSettingsSchema } from '@shared/contracts/content'
 import { createDb } from '../db'
 import {
   categoriesTable,
@@ -98,6 +98,13 @@ function parseSeoDefaults(value: string | null | undefined) {
     description: typeof parsed.description === 'string' ? parsed.description : null,
     ogImageUrl: typeof parsed.ogImageUrl === 'string' ? parsed.ogImageUrl : null,
   }
+}
+
+function parseTrackingSettings(value: string | null | undefined) {
+  const parsed = trackingSettingsSchema.safeParse(parseJsonObject(value))
+  return parsed.success
+    ? parsed.data
+    : { gtmContainerId: null, ga4MeasurementId: null, metaPixelId: null, tiktokPixelId: null }
 }
 
 async function buildProductCards(
@@ -388,6 +395,7 @@ publicStorefrontRoutes.get('/settings', async (context) => {
         'payment_guidance',
         'announcement_bar',
         'seo_defaults',
+        'tracking_settings',
       ].includes(setting.key),
     ),
   )
@@ -405,6 +413,7 @@ publicStorefrontRoutes.get('/settings', async (context) => {
       paymentGuidance: values.get('payment_guidance') ?? null,
       announcementBar: parseAnnouncementBar(values.get('announcement_bar')),
       seoDefaults: parseSeoDefaults(values.get('seo_defaults')),
+      tracking: parseTrackingSettings(values.get('tracking_settings')),
     },
   })
 })
