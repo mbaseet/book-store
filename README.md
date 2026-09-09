@@ -179,35 +179,38 @@ must be removed after upgrading to Workers Paid. Production defaults to
 150,000 iterations; a successful sign-in automatically rehashes a temporary
 staging credential at the stronger work factor.
 
-## Deferred Cloudflare production rollout
+## Cloudflare production
 
 This application deploys as one full-stack **Cloudflare Worker with Static
 Assets**. It is not a separate Pages project: the Worker serves the Hono API
 and the built React application together.
 
-Production Cloudflare resources are intentionally unprovisioned. Do not create
-them or run `pnpm deploy` until the Workers upgrade and a separate production
-rollout are approved. The current production deploy command is deliberately
-guarded to fail before it can publish.
+The production Worker is deployed at <https://mintmeow.com>. It uses the
+isolated `personalized-storybooks-eg-production-db` D1 database, with
+`workers.dev` and preview URLs disabled. The production deploy command verifies
+the reviewed account, database, domain, environment, and required secret names
+before it publishes.
 
-After those approvals, the rollout checklist is:
+Production rollout and maintenance checklist:
 
-1. Create a production D1 database, then replace the placeholder
-   `database_id` in `wrangler.jsonc`.
-2. Apply the reviewed schema migrations with `pnpm db:migrate:remote`, then,
+1. Apply reviewed schema migrations with `pnpm db:migrate:remote`, then,
    only for a brand-new database, run `pnpm db:seed:remote:bootstrap` once.
    Never run the demo-order seed remotely.
-3. Set Worker secrets for `SESSION_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`,
+2. Set Worker secrets for `SESSION_SECRET`, `ADMIN_BOOTSTRAP_TOKEN`,
    `ABANDONED_CART_ENCRYPTION_SECRET`, Cloudinary, and Resend. Put only
    non-sensitive runtime configuration such as `APP_BASE_URL` and
    `ENVIRONMENT=production` in Worker variables.
-4. Deploy the Worker with the separately approved production deployment
-   procedure, using its initial `workers.dev` URL as `APP_BASE_URL` until the
-   production domain is connected.
-5. In Cloudflare Dashboard, open the Worker’s **Settings → Builds** and connect
+3. Deploy with `pnpm deploy`. The reviewed production environment uses
+   `https://mintmeow.com` as `APP_BASE_URL` and attaches that custom domain.
+4. In Cloudflare Dashboard, open the Worker’s **Settings → Builds** and connect
    the GitHub repository. Use Node 22, `pnpm build` as the build command, and
-   only the separately approved production deploy command. Keep migrations and
-   the bootstrap seed as explicit, reviewed operations rather than build steps.
+   `pnpm deploy` as the deploy command. Keep migrations and the bootstrap seed
+   as explicit, reviewed operations rather than build steps.
+
+The production schema and bootstrap content are loaded. Legal drafts remain
+unpublished by default, and business contact details, reviewed policies,
+products, pricing, and final catalog media must be completed before the
+storefront accepts real orders.
 
 The 15-minute Worker cron in `wrangler.jsonc` removes expired checkout drafts,
 temporary uploads, and private assets that have reached their retention

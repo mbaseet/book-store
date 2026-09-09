@@ -218,16 +218,18 @@ former `personalized-storybooks-eg-staging.mint-meow.workers.dev` Worker remain
 untouched as recovery references only; neither is an active test or deployment
 target. The canonical staging Worker temporarily uses a 5,000-iteration PBKDF2
 work factor solely because it is on Workers Free. Remove that exception after
-upgrading to Workers Paid. Production Cloudflare resources remain
-unprovisioned, and no production rollout may begin until that upgrade and a
-separate approval are complete.
+upgrading to Workers Paid. The production Worker and isolated D1 database were
+provisioned on 2026-09-09 at `https://mintmeow.com`. The domain and health
+endpoint are live, but the storefront is not business-launch-ready until the
+remaining catalog, contact, policy, operational, and Workers-plan checks below
+are completed.
 
 1. Confirm the internal process for reviewing full-transfer and deposit proofs,
    confirming COD orders, and recording delivered cash before production
    begins.
-2. Provide the final production domain, favicon/app icon, final English font
-   choice, and replacement product photography. Temporary generated/catalog
-   imagery must remain easy to replace.
+2. The final production domain is `mintmeow.com`. Provide the favicon/app icon,
+   final English font choice, and replacement product photography. Temporary
+   generated/catalog imagery must remain easy to replace.
 3. Add products, cover/gallery media, Arabic/English copy, safe Markdown
    descriptions, ready/personalized product settings, prices, add-ons, and
    category assignments through admin.
@@ -236,13 +238,14 @@ separate approval are complete.
    effective dates; replace the placeholders in the policy drafts.
 6. Obtain Egyptian legal review of Terms, Returns, and Privacy Policy before
    publishing the production storefront.
-7. For a separately approved production rollout, configure production
-   Cloudflare/D1 resources, Cloudinary, SESSION_SECRET,
-   ADMIN_BOOTSTRAP_TOKEN, production APP_BASE_URL, and Resend if
-   password-reset emails should be sent in production.
-8. After a future new production database is provisioned, create its first
-   admin account through the bootstrap flow, then configure governorate fees
-   and manual payment details from Admin.
+7. Production Cloudflare/D1 resources, Cloudinary, fresh `SESSION_SECRET`,
+   `ADMIN_BOOTSTRAP_TOKEN`, `ABANDONED_CART_ENCRYPTION_SECRET`, and production
+   `APP_BASE_URL` are configured. Configure Resend before enabling password
+   reset emails in production, and confirm Workers Paid before real customer
+   authentication traffic.
+8. Production migrations and bootstrap content are loaded. Create the first
+   admin account through the bootstrap flow, then review governorate fees and
+   manual payment details from Admin.
 9. Perform staging tests of real upload, upfront/deposit/COD payment choices,
    scheduled cleanup, mobile payment link, report totals, and order-review
    flows using non-sensitive test data.

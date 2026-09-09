@@ -36,6 +36,29 @@
       "triggers": {
         "crons": ["*/15 * * * *"]
       }
+    },
+    "production": {
+      "account_id": "c8aea16544af3ad32a67f6c3e0217755",
+      "preview_urls": false,
+      "workers_dev": false,
+      "routes": [
+        {
+          "pattern": "mintmeow.com",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_BASE_URL": "https://mintmeow.com",
+        "ENVIRONMENT": "production"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "personalized-storybooks-eg-production-db",
+          "database_id": "d71121a2-d077-4b5b-b432-8008974501b0",
+          "migrations_dir": "drizzle"
+        }
+      ]
     }
   },
   "observability": {

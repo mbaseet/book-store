@@ -67,13 +67,13 @@ VALUES
   ('0c40d6e0-4e76-4c9e-8b98-3fbbb6f0aa01', 'payment_details', '{"instapay":"InstaPay\nPhone: 01010851818\nPayment link: https://ipn.eg/S/m201010851818/instapay/7Mw0Pk\nUsername: m201010851818@instapay","mobileWallet":"Mobile wallet / محفظة إلكترونية\nVodafone Cash, Orange Money, WE Pay, or Etisalat Cash\nPhone: 01010851818"}', 1)
 ON CONFLICT(key) DO NOTHING;
 
--- Editable launch drafts. Replace the bracketed business details and obtain a
--- local legal review before publishing a production storefront.
+-- Editable launch drafts. Keep these unpublished until the bracketed business
+-- details are replaced and local legal review is complete.
 INSERT INTO content_pages (id, key, is_published)
 VALUES
-  ('0c40d6c0-4e76-4c9e-8b98-3fbbb6f0aa01', 'terms', 1),
-  ('0c40d6c0-4e76-4c9e-8b98-3fbbb6f0aa02', 'returns', 1),
-  ('0c40d6c0-4e76-4c9e-8b98-3fbbb6f0aa03', 'privacy', 1)
+  ('0c40d6c0-4e76-4c9e-8b98-3fbbb6f0aa01', 'terms', 0),
+  ('0c40d6c0-4e76-4c9e-8b98-3fbbb6f0aa02', 'returns', 0),
+  ('0c40d6c0-4e76-4c9e-8b98-3fbbb6f0aa03', 'privacy', 0)
 ON CONFLICT(key) DO NOTHING;
 
 INSERT INTO content_page_translations (id, content_page_id, locale, title, content)
