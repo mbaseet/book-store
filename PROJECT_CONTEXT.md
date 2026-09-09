@@ -259,6 +259,12 @@ are completed.
     the built-in Privacy disclosure and tracking-consent controls before
     production. Do not enable provider IDs or recovery outreach without that
     review.
+12. On 2026-09-09, production received a sanitized storefront-only copy from
+    canonical staging: categories, products, public catalog media, add-ons,
+    FAQs, testimonials, and site settings. Customer accounts, admins, orders,
+    sessions, checkout data, private uploads, recovery leads, rate limits, and
+    promo redemptions were excluded. The copied catalog is still staging/sample
+    content and requires business review before accepting real orders.
 
 ## Change-management notes
 
