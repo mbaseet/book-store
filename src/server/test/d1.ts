@@ -9,7 +9,7 @@ interface SQLite { prepare(sql: string): Statement; exec(sql: string): void; clo
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: new (path: string) => SQLite }
 
 /** Real in-memory SQLite with the small D1 surface used by Drizzle/routes. */
-export function testDatabase(lastMigration = 7) {
+export function testDatabase(lastMigration = 8) {
   const sqlite = new DatabaseSync(':memory:')
   const directory = resolve('drizzle')
   for (const name of readdirSync(directory).filter((name) => /^\d+.*\.sql$/.test(name)).sort()) {

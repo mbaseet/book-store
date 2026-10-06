@@ -57,6 +57,13 @@
       "when": 1789679635640,
       "tag": "0007_ux_order_experience",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791321553000,
+      "tag": "0008_home_faqs",
+      "breakpoints": true
     }
   ]
 }

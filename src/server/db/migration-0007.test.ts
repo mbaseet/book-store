@@ -44,4 +44,17 @@ describe('UX order experience migration', () => {
         banner_media: '{"en":{"desktop":"/brand/ux-refresh/hero-worlds-banner.webp"}}',
       })
   })
+
+  it('adds bilingual home FAQs without overwriting an existing translation', () => {
+    const database = testDatabase(7)
+    databases.push(database)
+    const migration = readFileSync('drizzle/0008_home_faqs.sql', 'utf8')
+    database.sqlite.exec(migration)
+    database.sqlite.prepare("UPDATE faq_translations SET answer='Admin copy' WHERE faq_id='0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa01' AND locale='en'").run()
+    database.sqlite.exec(migration)
+
+    expect(database.sqlite.prepare('SELECT count(*) AS count FROM faqs').get()?.count).toBe(4)
+    expect(database.sqlite.prepare('SELECT count(*) AS count FROM faq_translations').get()?.count).toBe(8)
+    expect(database.sqlite.prepare("SELECT answer FROM faq_translations WHERE faq_id='0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa01' AND locale='en'").get()?.answer).toBe('Admin copy')
+  })
 })
