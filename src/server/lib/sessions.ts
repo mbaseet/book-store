@@ -116,6 +116,7 @@ export async function getCurrentCustomer(context: CookieContext, db: Database) {
       email: customerAccountsTable.email,
       phone: customerAccountsTable.phone,
       displayName: customerAccountsTable.displayName,
+      emailVerifiedAt: customerAccountsTable.emailVerifiedAt,
     })
     .from(customerSessionsTable)
     .innerJoin(customerAccountsTable, eq(customerSessionsTable.customerAccountId, customerAccountsTable.id))

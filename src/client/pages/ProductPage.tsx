@@ -374,7 +374,6 @@ export function ProductPage() {
           </div>
           <InlineFieldError id="quantity-error" error={errors.quantity} name="quantity" text={text} />
           <div className="flex items-center justify-between rounded-2xl bg-[#9FD9C2]/25 p-4 text-[#075f5b]"><span className="font-black">{text('إجمالي المنتج', 'Product total')}</span><span className="text-xl font-black text-[#0D7D78]">{formatMoney(unitPrice * quantity, locale)}</span></div>
-          <FormNotice tone="info">{text('الخطوة التالية: اختر المحافظة، راجع الإجمالي النهائي، ثم أرسل إثبات التحويل. لا يلزم إنشاء حساب.', 'Next: choose a governorate, review the final total, then upload the transfer proof. No account is required.')}</FormNotice>
           {submitError ? <FormNotice>{submitError}</FormNotice> : null}
           <button disabled={isAdding} className="mint-cta flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-3.5 transition hover:-translate-y-0.5 focus:outline-none focus-visible:ring-4 focus-visible:ring-[#FFD14D]/50 disabled:cursor-not-allowed disabled:opacity-60" type="submit">{isAdding ? <LoaderCircle className="animate-spin" size={18} /> : null}{isAdding ? text('يتم حفظ التفاصيل…', 'Saving details…') : definition ? text('تابع للتوصيل والدفع', 'Continue to delivery & payment') : text('أكمل الطلب', 'Continue to checkout')}</button>
         </form>

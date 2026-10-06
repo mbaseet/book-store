@@ -1,5 +1,7 @@
 import { and, eq, gt, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { dispatchNotifications, notificationInsert, orderEmail } from '../services/notifications'
+import { setPostOrderContext } from '../services/post-order'
 import { CURRENCY, STORY_LANGUAGES } from '@shared/constants'
 import {
   checkoutDraftDeliveryUpdateSchema,
@@ -18,6 +20,7 @@ import {
   orderStatusHistoryTable,
   ordersTable,
   promoCodeRedemptionsTable,
+  notificationJobsTable,
   promoCodesTable,
 } from '../db/schema'
 import { canonicalEmail, errorResponse, hasTrustedOrigin, parseJson } from '../lib/http'
@@ -297,7 +300,7 @@ checkoutRoutes.post('/checkout/quote', async (context) => {
     return errorResponse(context, 422, 'invalid_governorate', 'Please select an available governorate.')
   }
   if (parsed.data.promoCode && !promoCode) {
-    return errorResponse(context, 422, 'invalid_promo_code', 'This promo code is not available.')
+    return errorResponse(context, 422, 'promo_not_found', 'This promo code is not available.', [{ path: ['promoCode'], code: 'promo_not_found' }])
   }
 
   try {
@@ -331,7 +334,7 @@ checkoutRoutes.post('/checkout/quote', async (context) => {
     })
   } catch (error) {
     if (error instanceof PricingError) {
-      return errorResponse(context, 422, 'pricing_unavailable', 'Please review your order and try again.')
+      return errorResponse(context, 422, error.code, 'Please review your order and try again.', error.code.startsWith('promo_') ? [{ path: ['promoCode'], code: error.code }] : undefined, error.details)
     }
     return errorResponse(context, 500, 'pricing_unavailable', 'Pricing is temporarily unavailable.')
   }
@@ -377,7 +380,7 @@ checkoutRoutes.post('/checkout', async (context) => {
     return errorResponse(context, 422, 'invalid_governorate', 'Please select an available governorate.')
   }
   if (parsed.data.promoCode && !promoCode) {
-    return errorResponse(context, 422, 'invalid_promo_code', 'This promo code is not available.')
+    return errorResponse(context, 422, 'promo_not_found', 'This promo code is not available.', [{ path: ['promoCode'], code: 'promo_not_found' }])
   }
   const isCashOnDelivery = parsed.data.paymentPlan === 'cash_on_delivery'
   if (parsed.data.paymentMethod !== 'cash_on_delivery' && !configuredPaymentMethods.has(parsed.data.paymentMethod)) {
@@ -401,7 +404,7 @@ checkoutRoutes.post('/checkout', async (context) => {
     })
   } catch (error) {
     if (error instanceof PricingError) {
-      return errorResponse(context, 422, 'pricing_unavailable', 'Please review your saved story and try again.')
+      return errorResponse(context, 422, error.code, 'Please review your order and try again.', error.code.startsWith('promo_') ? [{ path: ['promoCode'], code: error.code }] : undefined, error.details)
     }
     return errorResponse(context, 500, 'pricing_unavailable', 'Pricing is temporarily unavailable.')
   }
@@ -511,7 +514,7 @@ checkoutRoutes.post('/checkout', async (context) => {
         }]
       : []),
   ]
-  const initialStatus = isCashOnDelivery ? 'cod_pending_confirmation' : 'payment_submitted'
+  const initialStatus = isCashOnDelivery ? 'cod_pending_confirmation' : 'in_review'
   const initialPaymentStatus = isCashOnDelivery
     ? 'cod_pending_confirmation'
     : parsed.data.paymentPlan === 'personalized_deposit_cod'
@@ -523,6 +526,7 @@ checkoutRoutes.post('/checkout', async (context) => {
     customerAccountId: customer?.id ?? null,
     status: initialStatus,
     customerName: parsed.data.customerName,
+    locale,
     email: canonicalEmail(parsed.data.email) || null,
     phone: canonicalPhone(parsed.data.phone),
     governorateId: governorate.id,
@@ -554,6 +558,8 @@ checkoutRoutes.post('/checkout', async (context) => {
     .update(checkoutDraftsTable)
     .set({ consumedAt: new Date() })
     .where(eq(checkoutDraftsTable.id, draft.id))
+  const confirmationEmail = orderEmail(context.env, orderRow, 'order_confirmation')
+  const confirmationJob = confirmationEmail ? await notificationInsert(db, context.env, `order:${orderId}`, 'order_confirmation', confirmationEmail) : null
   let promoReserved = false
   try {
     if (promoCode) {
@@ -584,6 +590,7 @@ checkoutRoutes.post('/checkout', async (context) => {
         ...(insertAssets ? [insertAssets] : []),
         insertHistory,
         markDraftConsumed,
+        ...(confirmationJob ? [db.insert(notificationJobsTable).values(confirmationJob)] : []),
         db.insert(promoCodeRedemptionsTable).values({
           promoCodeId: promoCode.id,
           orderId,
@@ -597,6 +604,7 @@ checkoutRoutes.post('/checkout', async (context) => {
         ...(insertAssets ? [insertAssets] : []),
         insertHistory,
         markDraftConsumed,
+        ...(confirmationJob ? [db.insert(notificationJobsTable).values(confirmationJob)] : []),
         db.insert(promoCodeRedemptionsTable).values({
           promoCodeId: promoCode.id,
           orderId,
@@ -611,6 +619,7 @@ checkoutRoutes.post('/checkout', async (context) => {
         ...(insertAssets ? [insertAssets] : []),
         insertHistory,
         markDraftConsumed,
+        ...(confirmationJob ? [db.insert(notificationJobsTable).values(confirmationJob)] : []),
       ])
     } else {
       await db.batch([
@@ -619,6 +628,7 @@ checkoutRoutes.post('/checkout', async (context) => {
         ...(insertAssets ? [insertAssets] : []),
         insertHistory,
         markDraftConsumed,
+        ...(confirmationJob ? [db.insert(notificationJobsTable).values(confirmationJob)] : []),
       ])
     }
   } catch {
@@ -630,6 +640,8 @@ checkoutRoutes.post('/checkout', async (context) => {
     return errorResponse(context, 500, 'checkout_unavailable', 'Your order could not be submitted. Please try again.')
   }
 
+  await setPostOrderContext(context, context.env, orderId)
+  context.executionCtx.waitUntil(dispatchNotifications(db, context.env))
   await Promise.allSettled([
     consumeCheckoutDraft(context, db, draft),
     ...(parsed.data.paymentProofUpload ? [consumePrivateCheckoutUpload(db, parsed.data.paymentProofUpload)] : []),

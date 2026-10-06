@@ -255,6 +255,7 @@ async function saveCategory(
           isFeatured: input.isFeatured,
           sortOrder: input.sortOrder,
           imageUrl: input.imageUrl ?? null,
+          ...(input.bannerMedia !== undefined ? { bannerMedia: input.bannerMedia } : {}),
           cloudinaryPublicId: input.cloudinaryPublicId ?? null,
           updatedAt: now,
         })
@@ -265,6 +266,7 @@ async function saveCategory(
         isFeatured: input.isFeatured,
         sortOrder: input.sortOrder,
         imageUrl: input.imageUrl ?? null,
+        ...(input.bannerMedia !== undefined ? { bannerMedia: input.bannerMedia } : {}),
         cloudinaryPublicId: input.cloudinaryPublicId ?? null,
       })
   const upsertTranslation = (translation: typeof pair.ar) =>

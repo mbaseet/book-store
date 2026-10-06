@@ -13,6 +13,7 @@ export type ApiErrorBody = {
     code: string
     message: string
     fieldErrors?: ApiFieldError[]
+    details?: Record<string, number>
   }
 }
 
@@ -22,8 +23,9 @@ export function errorResponse(
   code: string,
   message: string,
   fieldErrors?: ApiFieldError[],
+  details?: Record<string, number>,
 ) {
-  return context.json<ApiErrorBody>({ error: { code, message, ...(fieldErrors?.length ? { fieldErrors } : {}) } }, status)
+  return context.json<ApiErrorBody>({ error: { code, message, ...(fieldErrors?.length ? { fieldErrors } : {}), ...(details ? { details } : {}) } }, status)
 }
 
 function safeIssueCode(issue: ZodIssue): string {

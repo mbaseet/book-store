@@ -45,8 +45,11 @@ export const ordersTable = sqliteTable(
     customerAccountId: text('customer_account_id').references(() => customerAccountsTable.id, {
       onDelete: 'set null',
     }),
+    // Preserve the legacy database default to avoid rebuilding orders and its
+    // dependent foreign keys. Checkout always writes the new lifecycle explicitly.
     status: text('status').notNull().default('payment_submitted'),
     customerName: text('customer_name').notNull(),
+    locale: text('locale').notNull().default('en'),
     email: text('email'),
     phone: text('phone').notNull(),
     governorateId: text('governorate_id').references(() => governoratesTable.id, { onDelete: 'set null' }),

@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowUpRight, BookOpen, Blocks, Gift, Search, Sparkles, Sticker } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { getCategories, getProducts, getSettings, getTestimonials, type ProductCard } from '../lib/api'
+import { getCategories, getProducts, getSettings, getFaqs, type ProductCard } from '../lib/api'
 import { formatMoney } from '../lib/format'
 import { useStoreLocale } from '../lib/locale'
 import { MintCompanion } from '../components/MintCompanion'
 import { EyebrowBanner } from '../components/EyebrowBanner'
+import { CategoryCarousel } from '../components/CategoryCarousel'
+import { HomeReviews } from '../components/Reviews'
 
 function ProductCardView({ product }: { product: ProductCard }) {
   const { locale, localizedPath, text } = useStoreLocale()
@@ -57,9 +59,13 @@ export function HomePage() {
   const { locale, localizedPath, text } = useStoreLocale()
   const productsQuery = useQuery({ queryKey: ['products', locale, 'featured'], queryFn: () => getProducts(locale, { featured: true }) })
   const settingsQuery = useQuery({ queryKey: ['settings', locale], queryFn: () => getSettings(locale) })
-  const testimonialsQuery = useQuery({ queryKey: ['testimonials', locale], queryFn: () => getTestimonials(locale) })
-  const featuredProducts = productsQuery.data?.products ?? []
-  const testimonials = testimonialsQuery.data?.testimonials ?? []
+  const bestsellersQuery = useQuery({ queryKey: ['products', locale, 'best-sellers'], queryFn: () => getProducts(locale, { sort: 'best_selling', limit: 6 }) })
+  const allProductsQuery = useQuery({ queryKey: ['products', locale, 'home-more'], queryFn: () => getProducts(locale) })
+  const categoriesQuery = useQuery({ queryKey: ['categories', locale], queryFn: () => getCategories(locale) })
+  const faqsQuery = useQuery({ queryKey: ['faqs', locale], queryFn: () => getFaqs(locale) })
+  const hasBestsellers = Boolean(bestsellersQuery.data?.products.length)
+  const featuredProducts = hasBestsellers ? bestsellersQuery.data!.products : (productsQuery.data?.products ?? []).slice(0, 6)
+  const moreProducts = (allProductsQuery.data?.products ?? []).filter((product) => !featuredProducts.some((featured) => featured.id === product.id)).slice(0, 6)
 
   const families = [
     { title: text('قصص مخصّصة', 'Personalized stories'), copy: text('هم أبطال الحكاية.', 'They become the hero.'), Icon: BookOpen, image: '/brand/mint-reading.png', tone: 'bg-[#0D7D78] text-[#FAF8F3]' },
@@ -88,7 +94,7 @@ export function HomePage() {
           <div className="relative mx-auto w-full max-w-[34rem]">
             <div className="absolute inset-x-10 top-4 h-24 rounded-full bg-[#FFD14D]/25 blur-3xl" />
             <div className="relative min-h-[25rem] overflow-hidden rounded-[2.5rem] border border-[#9FD9C2]/35 bg-[#075f5b] p-6 shadow-2xl shadow-[#075f5b]/40 sm:min-h-[31rem]">
-              <img src="/brand/mint-meow-logo-mint.png" alt="Mint Meow" className="absolute start-7 top-6 h-16 w-20 object-contain opacity-90 sm:h-20 sm:w-24" />
+              <img src="/brand/ux-refresh/logo.svg" alt="Mint Meow" className="absolute start-7 top-6 h-16 w-20 object-contain opacity-90 sm:h-20 sm:w-24" />
               <span className="absolute end-7 top-7 grid size-12 place-items-center rounded-2xl bg-[#FFD14D] text-[#075f5b] shadow-lg"><Gift size={22} /></span>
               <img src="/brand/mint-reading.png" alt="Mint reading a book" className="mint-float absolute bottom-[-5%] left-1/2 h-[90%] w-auto max-w-none -translate-x-1/2 object-contain" />
               <div className="absolute bottom-6 start-6 end-6 rounded-2xl bg-[#FAF8F3]/95 p-4 text-[#075f5b] shadow-lg sm:start-auto sm:w-56"><p className="text-xs font-black uppercase tracking-[.12em] text-[#0D7D78]">{text('هدية اليوم', 'Today’s little joy')}</p><p className="mt-1 text-sm font-bold leading-5">{text('اختَر شيئًا سيحبونه ويحتفظون به.', 'Pick something they will love and keep.')}</p></div>
@@ -97,16 +103,20 @@ export function HomePage() {
         </div>
       </section>
 
-      <EyebrowBanner priority className="py-10 sm:py-14" />
+      <CategoryCarousel categories={categoriesQuery.data?.categories ?? []} />
 
       <section className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20">
-        <div className="mb-8 flex items-end justify-between gap-4"><div><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('أشياء محبوبة', 'Made to be loved')}</p><h2 className="mint-heading mt-2 text-3xl tracking-tight text-[#075f5b] sm:text-4xl">{text('اختيارات صغيرة تفتح عالمًا كبيرًا', 'Small picks, big worlds')}</h2></div><Link className="hidden items-center gap-1 text-sm font-black text-[#0D7D78] sm:inline-flex" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')} <ArrowLeft size={16} /></Link></div>
-        {productsQuery.isLoading ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3, 4, 5, 6].map((key) => <div key={key} className="h-72 animate-pulse rounded-[1.75rem] bg-[#9FD9C2]/25" />)}</div> : featuredProducts.length > 0 ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{featuredProducts.map((product) => <ProductCardView key={product.id} product={product} />)}</div> : <EmptyProducts />}
+        <div className="mb-8 flex items-end justify-between gap-4"><div><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('أشياء محبوبة', 'Made to be loved')}</p><h2 className="mint-heading mt-2 text-3xl tracking-tight text-[#075f5b] sm:text-4xl">{hasBestsellers ? text('الأكثر مبيعًا', 'Best sellers') : text('اختياراتنا لك', 'Our picks')}</h2></div><Link className="hidden items-center gap-1 text-sm font-black text-[#0D7D78] sm:inline-flex" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')} <ArrowLeft size={16} /></Link></div>
+        {(productsQuery.isLoading || bestsellersQuery.isLoading) ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3, 4, 5, 6].map((key) => <div key={key} className="h-72 animate-pulse rounded-[1.75rem] bg-[#9FD9C2]/25" />)}</div> : featuredProducts.length > 0 ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{featuredProducts.map((product) => <ProductCardView key={product.id} product={product} />)}</div> : <EmptyProducts />}
         <Link className="mt-7 inline-flex items-center gap-1 text-sm font-black text-[#0D7D78] sm:hidden" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')} <ArrowLeft size={16} /></Link>
       </section>
 
       <section className="overflow-hidden bg-[#9FD9C2]/38 py-14 sm:py-20">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8"><div className="mb-8 max-w-2xl"><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('اكتشف عالم مِنت', 'Explore Mint’s world')}</p><h2 className="mint-heading mt-2 text-3xl tracking-tight text-[#075f5b] sm:text-4xl">{text('هناك شيء جديد لكل فضول صغير', 'Something new for every little curiosity')}</h2></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{families.map(({ Icon, ...family }) => <Link key={family.title} to={localizedPath('/stories')} className={`group relative min-h-72 overflow-hidden rounded-[1.75rem] p-6 transition hover:-translate-y-1 ${family.tone}`}><Icon size={22} className="opacity-75" /><h3 className="mt-10 max-w-[10rem] text-2xl font-black leading-tight">{family.title}</h3><p className="mt-2 max-w-[9rem] text-sm font-semibold opacity-75">{family.copy}</p><img src={family.image} alt="" className="absolute -bottom-4 -end-9 h-48 w-auto transition duration-300 group-hover:scale-105" /><ArrowUpRight className="absolute bottom-5 start-6" size={19} /></Link>)}</div><MintCompanion pose="peek" tone="cream" className="mt-6 max-w-md" eyebrow={text('مِنت تقول', 'Mint says')} message={text('اختاري ما يشبه عالمهم — وأنا سأساعدك في الباقي!', 'Choose what feels like their world — I’ll help with the rest!')} /></div>
+        <div className="mx-auto max-w-7xl px-5 sm:px-8"><div className="mb-8 max-w-2xl"><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('اكتشف عالم مِنت', 'Explore Mint’s world')}</p><h2 className="mint-heading mt-2 text-3xl tracking-tight text-[#075f5b] sm:text-4xl">{text('هناك شيء جديد لكل فضول صغير', 'Something new for every little curiosity')}</h2></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{families.map(({ Icon, ...family }, index) => {
+          const content = <><Icon size={22} className="opacity-75" /><h3 className="mt-10 max-w-[10rem] text-2xl font-black leading-tight">{family.title}</h3><p className="mt-2 max-w-[9rem] text-sm font-semibold opacity-75">{family.copy}</p><img src={family.image} alt="" className="absolute -bottom-4 -end-9 h-48 w-auto" />{index === 0 ? <ArrowUpRight className="absolute bottom-5 start-6" size={19} /> : <span className="absolute bottom-5 start-6 rounded-full bg-white/90 px-3 py-1 text-xs font-black text-[#075f5b]">{text('قريبًا', 'Coming soon')}</span>}</>
+          const className = `group relative block min-h-72 overflow-hidden rounded-[1.75rem] p-6 ${family.tone}`
+          return index === 0 ? <Link key={family.title} to={localizedPath('/stories')} className={className}>{content}</Link> : <div key={family.title} className={className} aria-disabled="true">{content}</div>
+        })}</div><MintCompanion pose="peek" tone="cream" className="mt-6 max-w-md" eyebrow={text('مِنت تقول', 'Mint says')} message={text('اختاري ما يشبه عالمهم — وأنا سأساعدك في الباقي!', 'Choose what feels like their world — I’ll help with the rest!')} /></div>
       </section>
 
       <section className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20">
@@ -137,9 +147,9 @@ export function HomePage() {
                 imageAlt: text('كتاب مِنت جاهز ليصنع لحظة جميلة', 'A Mint storybook ready to make a beautiful moment'),
               },
             ].map((step, index) => (
-              <div key={step.title} className="rounded-2xl bg-[#FAF8F3]/10 p-3 sm:p-4">
-                <div className="rounded-xl bg-[#FAF8F3]/95 p-1">
-                  <img src={step.image} alt={step.imageAlt} className="mx-auto h-28 w-full object-contain sm:h-32" loading="lazy" />
+              <div key={step.title} className="p-1 sm:p-2">
+                <div className="how-artwork">
+                  <img src={step.image} alt={step.imageAlt} className="how-artwork-image" loading="lazy" />
                 </div>
                 <span className="mt-4 grid size-8 place-items-center rounded-xl bg-[#FFD14D] text-sm font-black text-[#075f5b]">{index + 1}</span>
                 <h3 className="mt-4 font-black">{step.title}</h3>
@@ -150,7 +160,10 @@ export function HomePage() {
         </div>
       </section>
 
-      {testimonials.length > 0 ? <section className="mx-auto max-w-7xl px-5 pb-16 sm:px-8"><div className="mb-7"><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('من عائلاتنا', 'From our families')}</p><h2 className="mt-2 text-3xl font-black tracking-tight text-[#075f5b]">{text('لحظات يحبونها', 'Little moments they love')}</h2></div><div className="grid gap-4 md:grid-cols-3">{testimonials.slice(0, 3).map((testimonial) => <figure key={testimonial.id} className="rounded-[1.75rem] border border-[#0D7D78]/10 bg-white p-6 shadow-sm"><blockquote className="text-xl font-bold leading-8 text-[#175451]">“{testimonial.quote}”</blockquote><figcaption className="mt-5 text-sm font-black text-[#0D7D78]">— {testimonial.displayName}</figcaption></figure>)}</div></section> : null}
+      <EyebrowBanner />
+      {moreProducts.length ? <section className="mx-auto max-w-7xl px-5 py-14 sm:px-8"><h2 className="mint-heading mb-7 text-3xl sm:text-4xl">{text('المزيد من القصص', 'More stories to discover')}</h2><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{moreProducts.map((product) => <ProductCardView key={product.id} product={product} />)}</div><Link to={localizedPath('/stories')} className="mt-6 inline-block font-bold text-[#0D7D78] underline">{text('عرض كل القصص', 'View all stories')}</Link></section> : null}
+      <HomeReviews />
+      {faqsQuery.data?.faqs.length ? <section className="mx-auto max-w-4xl px-5 py-12 sm:px-8"><h2 className="mint-heading mb-7 text-3xl sm:text-4xl">{text('أسئلة قبل المغامرة', 'A few questions before the adventure')}</h2><div className="space-y-3">{faqsQuery.data.faqs.slice(0, 6).map((faq) => <details key={faq.id} className="rounded-2xl border border-[#0D7D78]/15 bg-white p-5"><summary className="cursor-pointer font-bold">{faq.question}</summary><p className="mt-3 whitespace-pre-wrap leading-7 text-[#47716e]">{faq.answer}</p></details>)}</div><Link to={localizedPath('/faq')} className="mt-5 inline-block font-bold text-[#0D7D78] underline">{text('كل الأسئلة الشائعة', 'All frequently asked questions')}</Link></section> : null}
     </main>
   )
 }
@@ -170,5 +183,14 @@ export function ShopPage() {
   const productsQuery = useQuery({ queryKey: ['products', locale, category, search], queryFn: () => getProducts(locale, { category, search }) })
   const products = productsQuery.data?.products ?? []
 
-  return <main className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-16"><div className="grid gap-7 overflow-hidden rounded-[2rem] bg-[#9FD9C2]/35 p-7 sm:p-10 lg:grid-cols-[1.2fr_.8fr] lg:items-end"><div><p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('تسوّق عالم مِنت', 'Shop Mint’s world')}</p><h1 className="mint-heading mt-3 text-4xl tracking-tight text-[#075f5b] sm:text-5xl">{text('أشياء للقراءة، اللعب، والتعلّم.', 'Things to read, play, and grow with.')}</h1><p className="mt-4 max-w-2xl leading-7 text-[#47716e]">{text('اختر منتجًا مخصّصًا أو جاهزًا للشحن — وسترى ما يحتاجه كل منتج قبل المتابعة.', 'Choose a personalized or ready-to-ship product — every page makes the next step clear.')}</p></div><div className="relative mx-auto"><img className="h-44 w-auto sm:h-52" src="/brand/mint-exploring.png" alt="Mint exploring" /><p className="absolute bottom-3 -start-6 max-w-36 rounded-2xl bg-[#FAF8F3] p-3 text-xs font-black leading-4 text-[#075f5b] shadow-sm">{text('دعيني أساعدك في الاختيار!', 'Let me help you choose!')}</p></div></div><div className="mt-8 flex flex-col gap-4"><label className="flex max-w-xl items-center gap-2 rounded-2xl border border-[#0D7D78]/15 bg-white px-4 py-3.5 shadow-sm"><Search size={18} className="text-[#0D7D78]" /><input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent text-[#075f5b] outline-none" placeholder={text('ابحث عن منتج', 'Search products')} /></label><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setCategory(undefined)} className={`rounded-xl px-4 py-2.5 text-sm font-black ${!category ? 'bg-[#0D7D78] text-white' : 'bg-white text-[#075f5b] ring-1 ring-[#0D7D78]/10'}`}>{text('الكل', 'All')}</button>{(categoriesQuery.data?.categories ?? []).map((item) => <button key={item.id} type="button" onClick={() => setCategory(item.slug)} className={`rounded-xl px-4 py-2.5 text-sm font-black ${category === item.slug ? 'bg-[#0D7D78] text-white' : 'bg-white text-[#075f5b] ring-1 ring-[#0D7D78]/10'}`}>{item.name}</button>)}</div></div><section className="mt-8">{productsQuery.isLoading ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3, 4, 5, 6].map((key) => <div key={key} className="h-72 animate-pulse rounded-[1.75rem] bg-[#9FD9C2]/25" />)}</div> : products.length > 0 ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{products.map((product) => <ProductCardView key={product.id} product={product} />)}</div> : <EmptyProducts error={text('لم نجد منتجًا مطابقًا الآن.', 'No matching product is available right now.')} />}</section></main>
+  const activeCategory = categoriesQuery.data?.categories.find((item) => item.slug === category)
+  const unknownCategory = category && categoriesQuery.isSuccess && !activeCategory
+  return <main>
+    {activeCategory?.bannerMedia ? <EyebrowBanner priority media={activeCategory.bannerMedia} alt={activeCategory.name} to={`/stories?category=${encodeURIComponent(activeCategory.slug)}`} /> : null}
+    <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8 sm:py-14">
+      <header><p className="text-sm font-bold text-[#0D7D78]">{text('تسوّق عالم مِنت', 'Shop Mint’s world')}</p><h1 className="mint-heading mt-3 text-4xl sm:text-5xl">{unknownCategory ? text('الفئة غير موجودة', 'Category not found') : activeCategory?.name ?? text('قصص لعالمهم الصغير', 'Stories for their little world')}</h1><p className="mt-4 max-w-2xl leading-7 text-[#47716e]">{activeCategory?.description ?? text('اختر القصة الأقرب لقلب طفلك.', 'Find the story closest to your child’s heart.')}</p></header>
+      <div className="mt-8 flex flex-col gap-4"><label className="flex max-w-xl items-center gap-2 rounded-2xl border border-[#0D7D78]/15 bg-white px-4 py-3.5"><Search size={18} className="text-[#0D7D78]" /><span className="sr-only">{text('ابحث عن قصة', 'Search stories')}</span><input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent outline-none" placeholder={text('ابحث عن قصة', 'Search stories')} /></label><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setCategory(undefined)} className={`rounded-xl px-4 py-2.5 text-sm font-black ${!category ? 'bg-[#0D7D78] text-white' : 'bg-white text-[#075f5b]'}`}>{text('الكل', 'All')}</button>{(categoriesQuery.data?.categories ?? []).map((item) => <button key={item.id} type="button" onClick={() => setCategory(item.slug)} aria-pressed={category === item.slug} className={`rounded-xl px-4 py-2.5 text-sm font-black ${category === item.slug ? 'bg-[#0D7D78] text-white' : 'bg-white text-[#075f5b]'}`}>{item.name}</button>)}</div></div>
+      <section className="mt-8">{productsQuery.isLoading ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map((key) => <div key={key} className="h-72 animate-pulse rounded-3xl bg-[#9FD9C2]/25" />)}</div> : products.length > 0 ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{products.map((product) => <ProductCardView key={product.id} product={product} />)}</div> : <EmptyProducts error={productsQuery.isError ? text('تعذر تحميل القصص. حاول مجددًا.', 'We could not load stories. Please try again.') : undefined} />}</section>
+    </div>
+  </main>
 }

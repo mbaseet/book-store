@@ -37,7 +37,7 @@ export function HowItWorksPage() {
   ]
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16">
+    <main><div className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16">
       <div className="grid gap-6 overflow-hidden rounded-[2rem] bg-[#0D7D78] p-7 text-[#FAF8F3] sm:p-10 md:grid-cols-[1fr_250px] md:items-center">
         <div>
           <p className="text-sm font-black uppercase tracking-[.14em] text-[#FFD14D]">{text('ببساطة مع مِنت', 'Simple with Mint')}</p>
@@ -50,8 +50,8 @@ export function HowItWorksPage() {
       <div className="mt-9 grid gap-5 md:grid-cols-3">
         {steps.map((step, index) => (
           <article key={step.title} className="rounded-3xl border border-[#0D7D78]/12 bg-white p-5 shadow-sm sm:p-7">
-            <div className="rounded-2xl bg-[#FAF8F3] p-2">
-              <img src={step.image} alt={step.imageAlt} className="mx-auto h-40 w-full object-contain sm:h-44" loading="lazy" />
+            <div className="how-artwork">
+              <img src={step.image} alt={step.imageAlt} className="how-artwork-image" loading="lazy" />
             </div>
             <span className="mint-heading mt-5 block text-5xl text-[#0D7D78]">{index + 1}</span>
             <h2 className="mint-heading mt-3 text-2xl text-[#075f5b]">{step.title}</h2>
@@ -60,12 +60,12 @@ export function HowItWorksPage() {
         ))}
       </div>
 
-      <EyebrowBanner className="mt-9 px-0 sm:px-0" />
+      </div><EyebrowBanner /><div className="mx-auto max-w-5xl px-5 sm:px-8">
 
       <div className="mt-8 rounded-3xl bg-[#9FD9C2]/30 p-6 leading-7 text-[#175451]">
         {text('ننقل تفاصيل الطلب إلى فريق التنفيذ خارج المنصة. لا يوجد تتبع شركة شحن في المرحلة الأولى؛ ستظهر حالة طلبك فقط هنا.', 'Your order details are passed to the production team outside the platform. In phase one, there is no courier integration; you will see only the order status here.')}
       </div>
-    </main>
+    </div></main>
   )
 }
 

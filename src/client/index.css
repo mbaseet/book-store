@@ -90,3 +90,7 @@ a {
 .mint-cta:hover {
   background: #ffe17d;
 }
+
+/* The supplied square PNGs include generous transparent vertical margins. */
+.how-artwork { width: 100%; aspect-ratio: 1.45; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.how-artwork-image { display: block; width: 100%; height: auto; flex-shrink: 0; }

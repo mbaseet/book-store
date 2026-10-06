@@ -1,3 +1,6 @@
+import { dispatchNotifications } from './services/notifications'
+import { reviewRoutes } from './routes/reviews'
+import { customerExperienceRoutes } from './routes/customer-experience'
 import { Hono } from 'hono'
 import { errorResponse } from './lib/http'
 import { authRoutes } from './routes/auth'
@@ -41,6 +44,8 @@ app.route('/api/storefront', publicStorefrontRoutes)
 app.route('/api', uploadRoutes)
 app.route('/api', checkoutRoutes)
 app.route('/api', orderRoutes)
+app.route('/api', reviewRoutes)
+app.route('/api', customerExperienceRoutes)
 app.route('/api', authRoutes)
 app.route('/api', adminCatalogRoutes)
 app.route('/api', adminMediaRoutes)
@@ -89,6 +94,7 @@ export default {
         const db = createDb(env)
         const results = await Promise.allSettled([
           purgeExpiredCheckoutDrafts(db, env),
+          dispatchNotifications(db, env),
           purgeExpiredUnclaimedPrivateUploads(db, env),
           // Recovery retention is isolated. Its storage must never delay or suppress
           // existing child-photo, payment-proof, or personalization purges.

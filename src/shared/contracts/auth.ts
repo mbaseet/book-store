@@ -3,6 +3,7 @@ import { z } from 'zod'
 const passwordSchema = z.string().min(8).max(128)
 
 export const customerRegistrationSchema = z.object({
+  orderNumber: z.string().trim().max(64).optional(),
   email: z.string().trim().email().max(254),
   password: passwordSchema,
   phone: z.string().trim().min(7).max(30).optional(),

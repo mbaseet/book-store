@@ -1,3 +1,5 @@
+import { ReviewForm } from '../components/Reviews'
+import { EmailVerificationPanel, ClaimOrderButton } from '../components/OrderExperience'
 import { useState, type ReactNode } from 'react'
 import { useForm, type FieldError } from 'react-hook-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -23,11 +25,12 @@ type Credentials = { email: string; password: string; displayName: string; phone
 export function AccountPage() {
   const { locale, localizedPath, text } = useStoreLocale()
   const queryClient = useQueryClient()
+  const [accountParams] = useSearchParams()
   const meQuery = useQuery({ queryKey: ['customer', locale], queryFn: () => getCurrentCustomer(locale), retry: false })
   const ordersQuery = useQuery({
     queryKey: ['customer-orders', locale],
     queryFn: () => getCustomerOrders(locale),
-    enabled: Boolean(meQuery.data?.customer),
+    enabled: Boolean(meQuery.data?.customer.emailVerified),
     retry: false,
   })
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -96,7 +99,8 @@ export function AccountPage() {
           />
         </section>
 
-        <section className="mt-9">
+        {!customer.emailVerified ? <EmailVerificationPanel /> : accountParams.get('claimOrder') ? <ClaimOrderButton orderNumber={accountParams.get('claimOrder')!} /> : null}
+        {customer.emailVerified ? <section className="mt-9">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-sm font-black uppercase tracking-[.14em] text-[#0D7D78]">{text('سجلّك', 'Your history')}</p>
@@ -120,6 +124,7 @@ export function AccountPage() {
                       <span className="mt-2 inline-block rounded-full bg-[#9FD9C2]/55 px-3 py-1 text-xs font-black text-[#075f5b]">{orderStatusLabel(order.status, locale)}</span>
                     </div>
                   </div>
+                  {order.status === 'delivered' ? order.reviewSubmitted ? <p className="mt-4 text-sm text-[#47716e]">{text('تم إرسال تقييمك. شكرًا لك!', 'Your review has been submitted. Thank you!')}</p> : <details className="mt-4"><summary className="cursor-pointer font-bold text-[#0D7D78]">{text('كتابة تقييم', 'Write a review')}</summary><ReviewForm orderNumber={order.orderNumber} /></details> : null}
                 </article>
               ))}
             </div>
@@ -132,7 +137,7 @@ export function AccountPage() {
               message={text('عندما تطلب من حسابك، ستظهر مغامراتك هنا.', 'When you order with this account, your adventures will appear here.')}
             />
           )}
-        </section>
+        </section> : null}
       </main>
     )
   }
@@ -211,16 +216,28 @@ function AccountField({ label, name, children, error, text }: { label: string; n
 
 export function TrackOrderPage() {
   const { locale, text } = useStoreLocale()
-  const { register, handleSubmit, setError, formState: { errors, isSubmitting } } = useForm<{ orderNumber: string; phone: string }>({ mode: 'onBlur', reValidateMode: 'onChange', shouldFocusError: true })
+  const [params] = useSearchParams()
+  const [verifiedLookup, setVerifiedLookup] = useState<{ orderNumber: string; phone: string } | null>(null)
+  const [reviewSubmitted, setReviewSubmitted] = useState(false)
+  const [orderNote, setOrderNote] = useState<string | null>(null)
+  const [paymentNotice, setPaymentNotice] = useState<string | null>(null)
+  const { register, handleSubmit, setError, formState: { errors, isSubmitting } } = useForm<{ orderNumber: string; phone: string }>({ mode: 'onBlur', reValidateMode: 'onChange', shouldFocusError: true, defaultValues: { orderNumber: params.get('orderNumber') ?? '', phone: '' } })
   const [message, setMessage] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
 
   const onSubmit = async (values: { orderNumber: string; phone: string }) => {
     setMessage(null)
     setStatus(null)
+    setVerifiedLookup(null)
+    setOrderNote(null)
+    setPaymentNotice(null)
     try {
       const result = await trackOrder(locale, values.orderNumber, values.phone)
       setStatus(result.order.status)
+      setVerifiedLookup({ ...values, orderNumber: result.order.orderNumber })
+      setReviewSubmitted(result.order.reviewSubmitted)
+      setOrderNote(result.order.customerVisibleNote)
+      setPaymentNotice(['action_required', 'payment_rejected'].includes(result.order.paymentStatus) ? result.order.paymentStatus : null)
     } catch (error) {
       const serverErrors = fieldErrorsByPath(locale, error)
       for (const field of ['orderNumber', 'phone'] as const) {
@@ -263,6 +280,9 @@ export function TrackOrderPage() {
             <strong className="mint-heading mt-2 block text-3xl text-[#075f5b]">{orderStatusLabel(status, locale)}</strong>
           </div>
         ) : null}
+        {paymentNotice ? <p className="mt-4 font-bold text-[#075f5b]">{orderStatusLabel(paymentNotice, locale)}</p> : null}
+        {orderNote ? <p className="mt-4 rounded-xl bg-white p-4 text-sm">{orderNote}</p> : null}
+        {status === 'delivered' && verifiedLookup ? reviewSubmitted ? <p className="mt-5 text-sm">{text('تم إرسال تقييمك. شكرًا لك!', 'Your review has been submitted. Thank you!')}</p> : <ReviewForm key={verifiedLookup.orderNumber} orderNumber={verifiedLookup.orderNumber} phone={verifiedLookup.phone} /> : null}
         {message ? <div className="mt-5"><FormNotice>{message}</FormNotice></div> : null}
       </section>
     </main>

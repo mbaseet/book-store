@@ -29,15 +29,21 @@ Drizzle, and D1 on the server.
 - Governorate-based shipping (seeded at 85 EGP across all 27 governorates),
   sale prices, fixed-value promo codes, and configurable free-shipping
   threshold.
-- Optional customer accounts for previous-order history and email reset links.
+- Optional customer accounts offered after checkout, with prefilled order
+  details, verified-email ownership, previous-order history, and email reset
+  links. Guests can still track with their order number and phone.
+- Order confirmation emails, save/share/download controls for the order number,
+  and a delivered-order review flow with admin moderation and verified-purchase
+  ratings on the storefront.
 - Status-only order tracking and a private admin workspace for catalog search,
-  galleries, product-specific personalization, payment review, lifecycle
-  updates, reports, and editable store content.
+  galleries, category banners, product-specific personalization, payment
+  review, lifecycle updates, review moderation, reports, and editable content.
 - Private Cloudinary uploads for child images and payment proofs, with
   pre-order child photos expiring with the 60-minute checkout draft, and
   submitted-order photos, proofs, and sensitive personalization scheduled for
   deletion 30 days after delivery or cancellation.
-- Six initial bilingual story collections and editable Arabic/English draft
+- Six initial bilingual story collections with supplied card and banner art,
+  a browsable home carousel, launch FAQs, and editable Arabic/English draft
   terms, returns, and privacy pages.
 - Phase 2 is deployed to the canonical staging Worker: a minimal encrypted
   30-day saved-cart follow-up queue triggered only after eligible delivery
@@ -102,8 +108,10 @@ not accepted or rendered.
 `seed.sql` is bootstrap data only. Its conflict rules preserve admin edits, so
 do not use it to update a live store; make ongoing setting, policy, collection,
 and governorate changes through Admin or an explicit, reviewed migration.
-Password-reset emails require Resend credentials in production; local
-development logs a reset URL when mail settings are absent.
+Password resets, email verification, order confirmations, and delivery review
+invitations require Resend credentials in production. Delivery is persisted
+and retried by the scheduled Worker; local password reset development logs a
+reset URL when mail settings are absent.
 
 ### Saved-cart recovery (Phase 2)
 
@@ -212,9 +220,9 @@ unpublished by default, and business contact details, reviewed policies,
 products, pricing, and final catalog media must be completed before the
 storefront accepts real orders.
 
-The 15-minute Worker cron in `wrangler.jsonc` removes expired checkout drafts,
-temporary uploads, and private assets that have reached their retention
-deadline.
+The 15-minute Worker cron in `wrangler.jsonc` retries queued customer emails
+and removes expired checkout drafts, temporary uploads, and private assets that
+have reached their retention deadline.
 
 ## Structure
 

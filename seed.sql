@@ -34,14 +34,14 @@ ON CONFLICT(code) DO NOTHING;
 
 -- Initial storefront collections supplied by the business. Stories can be
 -- assigned to these through the admin catalog once they are ready.
-INSERT INTO categories (id, slug, is_featured, sort_order, image_url, cloudinary_public_id)
+INSERT INTO categories (id, slug, is_featured, sort_order, image_url, cloudinary_public_id, banner_media)
 VALUES
-  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa01', 'hero-worlds', 1, 1, NULL, NULL),
-  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa02', 'discover-the-world', 1, 2, NULL, NULL),
-  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa03', 'character-building', 1, 3, NULL, NULL),
-  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa04', 'feelings-and-life', 1, 4, NULL, NULL),
-  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa05', 'islamic-stories', 1, 5, NULL, NULL),
-  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa06', 'special-moments', 1, 6, NULL, NULL)
+  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa01', 'hero-worlds', 1, 1, '/brand/ux-refresh/hero-worlds-card.webp', NULL, '{"en":{"desktop":"/brand/ux-refresh/hero-worlds-banner.webp"}}'),
+  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa02', 'discover-the-world', 1, 2, '/brand/ux-refresh/discover-the-world-card.webp', NULL, '{"en":{"desktop":"/brand/ux-refresh/discover-the-world-banner.webp"}}'),
+  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa03', 'character-building', 1, 3, '/brand/ux-refresh/character-building-card.webp', NULL, '{"en":{"desktop":"/brand/ux-refresh/character-building-banner.webp"}}'),
+  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa04', 'feelings-and-life', 1, 4, '/brand/ux-refresh/feelings-and-life-card.webp', NULL, '{"en":{"desktop":"/brand/ux-refresh/feelings-and-life-banner.webp"}}'),
+  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa05', 'islamic-stories', 1, 5, '/brand/ux-refresh/islamic-stories-card.webp', NULL, '{"en":{"desktop":"/brand/ux-refresh/islamic-stories-banner.webp"}}'),
+  ('0c40d6a0-4e76-4c9e-8b98-3fbbb6f0aa06', 'special-moments', 1, 6, '/brand/ux-refresh/special-moments-card.webp', NULL, '{"en":{"desktop":"/brand/ux-refresh/special-moments-banner.webp"}}')
 ON CONFLICT(slug) DO NOTHING;
 
 INSERT INTO category_translations (id, category_id, locale, name, description)
@@ -233,6 +233,28 @@ We may revise this policy as the service changes. The latest version will be pub
 FROM content_pages
 WHERE key = 'privacy'
 ON CONFLICT(content_page_id, locale) DO NOTHING;
+
+-- Short, editable storefront FAQs. These are safe launch defaults and can be
+-- reordered or replaced from the admin content workspace.
+INSERT INTO faqs (id, is_published, sort_order)
+VALUES
+  ('0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa01', 1, 1),
+  ('0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa02', 1, 2),
+  ('0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa03', 1, 3),
+  ('0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa04', 1, 4)
+ON CONFLICT(id) DO NOTHING;
+
+INSERT INTO faq_translations (id, faq_id, locale, question, answer)
+VALUES
+  ('0c40d700-4e76-4c9e-8b98-3fbbb6f0aa01', '0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa01', 'en', 'How is my child added to a story?', 'Choose a story and enter the requested details. Personalized stories may ask for the child’s name, story language, and clear photos before checkout.'),
+  ('0c40d700-4e76-4c9e-8b98-3fbbb6f0aa02', '0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa01', 'ar', 'كيف تتم إضافة طفلي إلى القصة؟', 'اختر القصة وأدخل البيانات المطلوبة. قد تطلب القصص المخصصة اسم الطفل ولغة القصة وصورًا واضحة قبل إتمام الطلب.'),
+  ('0c40d700-4e76-4c9e-8b98-3fbbb6f0aa03', '0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa02', 'en', 'How can I track my order?', 'Open Track order and enter the order number and the phone number used at checkout. You can also create an account after ordering to keep verified orders together.'),
+  ('0c40d700-4e76-4c9e-8b98-3fbbb6f0aa04', '0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa02', 'ar', 'كيف أتابع طلبي؟', 'افتح صفحة تتبع الطلب وأدخل رقم الطلب ورقم الهاتف المستخدم عند الشراء. ويمكنك أيضًا إنشاء حساب بعد الطلب للاحتفاظ بطلباتك الموثقة في مكان واحد.'),
+  ('0c40d700-4e76-4c9e-8b98-3fbbb6f0aa05', '0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa03', 'en', 'Which payment methods are available?', 'Checkout shows the payment methods currently available for your order, including cash on delivery or supported manual transfers where eligible.'),
+  ('0c40d700-4e76-4c9e-8b98-3fbbb6f0aa06', '0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa03', 'ar', 'ما طرق الدفع المتاحة؟', 'تعرض صفحة إتمام الطلب طرق الدفع المتاحة لطلبك، ومنها الدفع عند الاستلام أو التحويل اليدوي المدعوم عند توفره.'),
+  ('0c40d700-4e76-4c9e-8b98-3fbbb6f0aa07', '0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa04', 'en', 'When can I leave a review?', 'You can rate your experience after the order is marked delivered. Open the order from your account or track it with your order number and phone.'),
+  ('0c40d700-4e76-4c9e-8b98-3fbbb6f0aa08', '0c40d6f0-4e76-4c9e-8b98-3fbbb6f0aa04', 'ar', 'متى يمكنني إضافة تقييم؟', 'يمكنك تقييم تجربتك بعد تسجيل الطلب كمُسلَّم. افتح الطلب من حسابك أو تتبعه باستخدام رقم الطلب ورقم الهاتف.')
+ON CONFLICT(faq_id, locale) DO NOTHING;
 
 INSERT INTO content_page_translations (id, content_page_id, locale, title, content)
 SELECT

@@ -50,6 +50,13 @@
       "when": 1785455720226,
       "tag": "0006_abandoned_checkout_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789679635640,
+      "tag": "0007_ux_order_experience",
+      "breakpoints": true
     }
   ]
 }

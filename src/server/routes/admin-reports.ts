@@ -13,9 +13,9 @@ const CAIRO_TIME_ZONE = 'Africa/Cairo'
 // An order becomes accepted only after staff approves its payment or COD
 // confirmation. This deliberately excludes submitted payments and COD orders
 // waiting for confirmation from order-value and cash-collection reporting.
-const ACCEPTED_ORDER_STATUSES = new Set(['payment_confirmed', 'in_production', 'shipped', 'delivered'])
-const ACTIVE_ACCEPTED_ORDER_STATUSES = new Set(['payment_confirmed', 'in_production', 'shipped'])
-const PENDING_PAYMENT_STATUSES = new Set(['payment_submitted', 'action_required'])
+const ACCEPTED_ORDER_STATUSES = new Set(['confirmed', 'payment_confirmed', 'in_production', 'preparing_order', 'ready_to_ship', 'shipped', 'delivered'])
+const ACTIVE_ACCEPTED_ORDER_STATUSES = new Set(['confirmed', 'payment_confirmed', 'in_production', 'preparing_order', 'ready_to_ship', 'shipped'])
+const PENDING_PAYMENT_STATUSES = new Set(['in_review', 'payment_submitted', 'action_required'])
 const PENDING_COD_CONFIRMATION_STATUSES = new Set(['cod_pending_confirmation'])
 const REJECTED_CANCELLED_STATUSES = new Set(['payment_rejected', 'cancelled'])
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
@@ -227,11 +227,12 @@ export function calculateReportMetrics(
   const pendingOrders = orders.filter((order) => PENDING_PAYMENT_STATUSES.has(order.status))
   const pendingCodConfirmationOrders = orders.filter((order) => PENDING_COD_CONFIRMATION_STATUSES.has(order.status))
   const rejectedCancelledOrders = orders.filter((order) => REJECTED_CANCELLED_STATUSES.has(order.status))
-  const allOrderValue = sum(orders)
+  const monetaryOrders = orders.filter((order) => order.status !== 'cancelled')
+  const allOrderValue = sum(monetaryOrders)
 
   const statusMix = ORDER_STATUSES.map((status) => {
     const rows = orders.filter((order) => order.status === status)
-    return { status, orderCount: rows.length, totalAmount: sum(rows) }
+    return { status, orderCount: rows.length, totalAmount: status === 'cancelled' ? 0 : sum(rows) }
   })
 
   const dailyTrend = new Map(
@@ -254,7 +255,7 @@ export function calculateReportMetrics(
     const row = dailyTrend.get(date)
     if (!row) continue
     row.orderCount += 1
-    row.totalAmount += order.totalAmount
+    if (order.status !== 'cancelled') row.totalAmount += order.totalAmount
     if (ACCEPTED_ORDER_STATUSES.has(order.status)) {
       row.acceptedOrderValueAmount += order.totalAmount
       const collectedAmount = amountPaidFor(order)
@@ -291,6 +292,7 @@ export function calculateReportMetrics(
     collectedRevenueAmount: number
   }>()
   for (const item of items) {
+    if (orderById.get(item.orderId)?.status === 'cancelled') continue
     const key = item.productId ?? `snapshot:${item.productTitle}`
     const row = stories.get(key) ?? {
       productId: item.productId,
@@ -310,7 +312,7 @@ export function calculateReportMetrics(
 
   const promos = new Map<string, { code: string; redemptions: number; discountAmount: number; orderValueAmount: number }>()
   const governorates = new Map<string, { governorateName: string; orderCount: number; totalAmount: number; shippingFeeAmount: number }>()
-  for (const order of orders) {
+  for (const order of monetaryOrders) {
     if (order.promoCode) {
       const row = promos.get(order.promoCode) ?? { code: order.promoCode, redemptions: 0, discountAmount: 0, orderValueAmount: 0 }
       row.redemptions += 1
@@ -342,11 +344,11 @@ export function calculateReportMetrics(
       pendingPaymentValueAmount: pendingOrders.reduce((total, order) => total + pendingPaymentAmountFor(order), 0),
       pendingCodConfirmationValueAmount: sum(pendingCodConfirmationOrders),
       codOutstandingAmount: activeAcceptedOrders.reduce((total, order) => total + amountDueOnDeliveryFor(order), 0),
-      rejectedCancelledValueAmount: sum(rejectedCancelledOrders),
-      averageOrderValueAmount: orders.length > 0 ? Math.round(allOrderValue / orders.length) : 0,
-      shippingFeeAmount: orders.reduce((total, order) => total + order.shippingFeeAmount, 0),
-      promoDiscountAmount: orders.reduce((total, order) => total + order.promoDiscountAmount, 0),
-      instapayDiscountAmount: orders.reduce((total, order) => total + amount(order.instapayDiscountAmount), 0),
+      rejectedCancelledValueAmount: sum(rejectedCancelledOrders.filter((order) => order.status !== 'cancelled')),
+      averageOrderValueAmount: monetaryOrders.length > 0 ? Math.round(allOrderValue / monetaryOrders.length) : 0,
+      shippingFeeAmount: monetaryOrders.reduce((total, order) => total + order.shippingFeeAmount, 0),
+      promoDiscountAmount: monetaryOrders.reduce((total, order) => total + order.promoDiscountAmount, 0),
+      instapayDiscountAmount: monetaryOrders.reduce((total, order) => total + amount(order.instapayDiscountAmount), 0),
       currency: 'EGP',
     },
     statusMix,

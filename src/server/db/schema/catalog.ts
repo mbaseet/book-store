@@ -69,6 +69,7 @@ export const categoriesTable = sqliteTable(
     isFeatured: integer('is_featured', { mode: 'boolean' }).notNull().default(false),
     sortOrder: integer('sort_order').notNull().default(0),
     imageUrl: text('image_url'),
+    bannerMedia: text('banner_media', { mode: 'json' }).$type<{ ar?: { desktop: string; mobile?: string }; en?: { desktop: string; mobile?: string } }>(),
     cloudinaryPublicId: text('cloudinary_public_id'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),

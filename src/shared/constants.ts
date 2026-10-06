@@ -5,12 +5,12 @@ export const STORY_LANGUAGES = ['ar_msa', 'ar_eg', 'en'] as const
 export type StoryLanguage = (typeof STORY_LANGUAGES)[number]
 
 export const ORDER_STATUSES = [
-  'payment_submitted',
-  'payment_confirmed',
-  'action_required',
-  'payment_rejected',
+  'in_review',
+  'confirmed',
   'cod_pending_confirmation',
   'in_production',
+  'preparing_order',
+  'ready_to_ship',
   'shipped',
   'delivered',
   'cancelled',

@@ -56,7 +56,7 @@ export function serializePersonalizationDefinition(definition: PersonalizationDe
 
 function normalizedLegacyAnswers(input: CheckoutDraftItemInput): Record<string, unknown> {
   return {
-    ...(input.personalization ?? {}),
+    ...input.personalization,
     childName: input.personalization?.childName ?? input.childName,
     storyLanguage: input.personalization?.storyLanguage ?? input.storyLanguage,
     ...(input.note !== undefined && input.personalization?.note === undefined ? { note: input.note } : {}),

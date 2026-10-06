@@ -1,3 +1,4 @@
+import { OrderSavePanel, PostOrderAccount } from '../components/OrderExperience'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useForm, useWatch, type FieldError } from 'react-hook-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -149,7 +150,7 @@ export function CheckoutPage() {
   const governoratesQuery = useQuery({ queryKey: ['governorates', locale], queryFn: () => getGovernorates(locale) })
   const settingsQuery = useQuery({ queryKey: ['settings', locale], queryFn: () => getSettings(locale) })
   const draftQuery = useQuery({ queryKey: ['checkout-draft', locale], queryFn: () => getCheckoutDraft(locale), retry: false })
-  const { register, control, handleSubmit, reset, setError, setValue, watch, formState: { errors } } = useForm<CheckoutForm>({
+  const { register, control, handleSubmit, reset, setError, clearErrors, setValue, watch, formState: { errors } } = useForm<CheckoutForm>({
     defaultValues: emptyDelivery(),
     shouldFocusError: true,
     mode: 'onBlur',
@@ -159,9 +160,12 @@ export function CheckoutPage() {
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofError, setProofError] = useState<string | null>(null)
   const [appliedPromoCode, setAppliedPromoCode] = useState('')
+  const [promoError, setPromoError] = useState<string | null>(null)
+  const [isApplyingPromo, setIsApplyingPromo] = useState(false)
+  const promoRequest = useRef(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isRemovingItemId, setIsRemovingItemId] = useState<string | null>(null)
-  const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [, setIsSavingDraft] = useState(false)
   const [draftMessage, setDraftMessage] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const hydratedDraftKey = useRef<string | null>(null)
@@ -327,6 +331,7 @@ export function CheckoutPage() {
       ? paymentOptions[0]?.value
       : paymentMethod || undefined
   const quoteQuery = useQuery({
+    staleTime: 0,
     queryKey: ['checkout-quote', locale, governorateCode, appliedPromoCode, paymentPlan, quotePaymentMethod, quoteItems],
     queryFn: () => getCheckoutQuote(locale, {
       governorateCode,
@@ -346,7 +351,7 @@ export function CheckoutPage() {
   const paymentInstruction = selectedPayment?.instruction ?? null
   const paymentLink = extractSafePaymentLink(paymentInstruction)
   const paymentConfigured = !requiresManualPayment || Boolean(paymentInstruction?.trim())
-  const quoteReady = Boolean(quote) && !quoteQuery.isFetching && !promoNeedsApply
+  const quoteReady = Boolean(quote) && !quoteQuery.isError && !quoteQuery.isFetching && !promoNeedsApply && !isApplyingPromo && !promoError
   const paymentReady = quoteReady && paymentConfigured
   const productSubtotalAmount = quote?.subtotalAmount ?? estimatedSubtotalAmount
   const promoDiscountAmount = quote?.promoDiscountAmount ?? 0
@@ -419,9 +424,50 @@ export function CheckoutPage() {
       })
     : null
 
-  const applyPromo = () => {
-    setAppliedPromoCode(promoCodeValue.trim().toLocaleUpperCase('en-US'))
+  const removePromo = useCallback(() => {
+    promoRequest.current += 1
+    setIsApplyingPromo(false)
+    setValue('promoCode', '', { shouldDirty: true })
+    setAppliedPromoCode('')
+    setPromoError(null)
+    clearErrors('promoCode')
     setSubmitError(null)
+  }, [clearErrors, setValue])
+
+  // Clearing the optional input removes the accepted coupon immediately.
+  // Do not let a restored draft or an in-flight Apply resurrect it.
+  useEffect(() => {
+    if (!promoCodeValue.trim() && (appliedPromoCode || promoError || isApplyingPromo)) removePromo()
+  }, [promoCodeValue, appliedPromoCode, promoError, isApplyingPromo, removePromo])
+  useEffect(() => {
+    promoRequest.current += 1
+    setIsApplyingPromo(false)
+  }, [promoCodeValue, governorateCode, paymentPlan, quotePaymentMethod, quoteItems])
+
+  const applyPromo = async () => {
+    const candidate = promoCodeValue.trim().toLocaleUpperCase('en-US')
+    if (!candidate) { removePromo(); return }
+    if (!governorateCode) {
+      setPromoError(text('اختر المحافظة أولًا لحساب الإجمالي.', 'Choose a governorate first so we can calculate the total.'))
+      return
+    }
+    const request = ++promoRequest.current
+    setIsApplyingPromo(true)
+    setPromoError(null)
+    clearErrors('promoCode')
+    setSubmitError(null)
+    const key = ['checkout-quote', locale, governorateCode, candidate, paymentPlan, quotePaymentMethod, quoteItems]
+    try {
+      const result = await getCheckoutQuote(locale, { governorateCode, promoCode: candidate, items: quoteItems, paymentPlan: paymentPlan || undefined, paymentMethod: quotePaymentMethod } as CheckoutQuoteInput)
+      if (request !== promoRequest.current) return
+      queryClient.setQueryData(key, result)
+      setAppliedPromoCode(candidate)
+    } catch (error) {
+      if (request !== promoRequest.current) return
+      setPromoError(requestErrorMessage(locale, error, { ar: 'تعذر التحقق من الكود. حاول مجددًا أو تابع بدونه.', en: 'We could not check this code. Retry or continue without it.' }))
+    } finally {
+      if (request === promoRequest.current) setIsApplyingPromo(false)
+    }
   }
 
   const removeItem = async (itemId: string) => {
@@ -548,14 +594,8 @@ export function CheckoutPage() {
       <div className="mt-8 grid gap-5 lg:grid-cols-[1fr_280px] lg:items-center">
         <div>
         <h1 className="mint-heading text-4xl text-[#075f5b]">{text('التوصيل والدفع', 'Delivery & payment')}</h1>
-        <p className="mt-3 max-w-3xl text-[#47716e]">
-          {text('أكمل كضيف — لا تحتاج إلى حساب. اختر تفاصيل التوصيل لنوضح لك خيارات الدفع والمبلغ الدقيق بهدوء.', 'Check out as a guest — no account is needed. Add delivery details and we’ll clearly show your payment choices and exact total.')}
-        </p>
-        <p className="mt-3 text-sm leading-6 text-[#47716e]">
-          {isSavingDraft
-            ? text('جارٍ حفظ التفاصيل بأمان…', 'Saving your details securely…')
-            : text('تُحفظ القصة وبيانات التوصيل على هذا المتصفح لمدة 60 دقيقة. لا نحفظ لقطة شاشة الدفع تلقائيًا.', 'Your story and delivery details are saved on this browser for 60 minutes. Payment screenshots are never saved automatically.')}
-        </p>
+
+
         {deliveryGuidance ? <div className="mt-4 rounded-2xl border border-[#9FD9C2] bg-[#9FD9C2]/20 p-4 text-sm leading-6 text-[#175451]"><p className="font-bold">{text('إرشادات التوصيل', 'Delivery guidance')}</p><p className="mt-1 whitespace-pre-line">{deliveryGuidance}</p></div> : null}
         {draftMessage ? <div className="mt-3"><FormNotice>{draftMessage}</FormNotice></div> : null}
         </div>
@@ -679,13 +719,15 @@ export function CheckoutPage() {
           <label className="mt-5 block text-sm font-bold text-[#175451]" htmlFor="promoCode">
             {text('كود الخصم', 'Promo code')}
             <div className="mt-2 flex gap-2" dir="ltr">
-              <input id="promoCode" aria-invalid={Boolean(errors.promoCode)} aria-describedby={errors.promoCode ? 'promoCode-error' : undefined} className={`min-w-0 flex-1 rounded-xl border bg-white px-3 py-2.5 font-normal outline-none focus:border-[#0D7D78] ${errors.promoCode ? 'border-red-500' : 'border-[#0D7D78]/20'}`} maxLength={40} {...register('promoCode', { maxLength: 40 })} />
-              <button className="rounded-xl border border-[#0D7D78] px-3 text-sm font-bold text-[#075f5b]" type="button" onClick={applyPromo}>{text('تطبيق', 'Apply')}</button>
+              <input id="promoCode" aria-invalid={Boolean(errors.promoCode || promoError)} aria-describedby={promoError ? 'promo-feedback' : errors.promoCode ? 'promoCode-error' : undefined} className={`min-w-0 flex-1 rounded-xl border bg-white px-3 py-2.5 font-normal outline-none focus:border-[#0D7D78] ${errors.promoCode ? 'border-red-500' : 'border-[#0D7D78]/20'}`} maxLength={40} {...register('promoCode', { maxLength: 40 })} />
+              <button className="rounded-xl border border-[#0D7D78] px-3 text-sm font-bold text-[#075f5b]" type="button" disabled={isApplyingPromo || !promoCodeValue.trim()} onClick={() => void applyPromo()}>{isApplyingPromo ? text('جارٍ التحقق…', 'Checking…') : text('تطبيق', 'Apply')}</button>
             </div>
           </label>
           <InlineFieldError id="promoCode-error" error={errors.promoCode} name="promoCode" text={text} />
           {promoNeedsApply ? <p className="mt-2 text-xs leading-5 text-[#075f5b]">{text('اضغط «تطبيق» لتحديث الإجمالي قبل التحويل.', 'Press Apply to update the total before transferring.')}</p> : null}
-          {quoteError ? <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{quoteError}</p> : null}
+          {(promoError || quoteError) ? <p id="promo-feedback" role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{promoError || quoteError}</p> : null}
+          {appliedPromoCode && !promoNeedsApply && !promoError && !quoteError ? <p className="mt-2 text-sm text-[#075f5b]" role="status">{text('تم تطبيق الكود:', 'Code applied:')} <strong dir="ltr">{appliedPromoCode}</strong></p> : null}
+          {(promoCodeValue || appliedPromoCode || promoError) ? <button className="mt-2 text-sm font-bold text-[#075f5b] underline" type="button" onClick={removePromo}>{promoError || quoteError ? text('المتابعة بدون كود', 'Continue without a code') : text('إزالة الكود', 'Remove code')}</button> : null}
           <div className="mt-5 rounded-2xl bg-white p-4">
             <div className="flex items-end justify-between gap-3"><span className="mint-heading text-lg text-[#075f5b]">{paymentPlan === 'cash_on_delivery' ? text('المبلغ عند الاستلام', 'Due on delivery') : paymentPlan === 'personalized_deposit_cod' ? text('المبلغ المطلوب الآن', 'Due now') : text('المبلغ المطلوب الآن', 'Due now')}</span><strong className="text-xl text-[#0D7D78]">{quote ? formatMoney(paymentPlan === 'cash_on_delivery' ? amountDueOnDelivery : amountDueNow, locale) : '—'}</strong></div>
             {quote && paymentPlan === 'personalized_deposit_cod' ? <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#0D7D78]/10 pt-3 text-sm"><span className="text-[#47716e]">{text('المتبقي عند الاستلام', 'Remaining on delivery')}</span><strong className="text-[#075f5b]">{formatMoney(amountDueOnDelivery, locale)}</strong></div> : null}
@@ -721,5 +763,5 @@ export function OrderConfirmationPage() {
       ? text('سنراجع إثبات العربون، ثم نبدأ تجهيز منتجك المخصص. الباقي عند الاستلام.', 'We’ll review your deposit proof, then begin preparing your personalized item. The remainder is due on delivery.')
       : text('سنراجع إثبات الدفع ثم نحدّث الحالة.', 'We will review the payment proof and update its status.')
 
-  return <main className="mx-auto max-w-2xl px-5 py-16 text-center sm:px-8"><MintCompanion pose="happy" tone="mint" className="mx-auto max-w-md text-start" eyebrow={text('مِنت تحتفل', 'Mint is celebrating')} message={text('وصل طلبك! شكرًا لأنك صنعتِ معنا لحظة جميلة.', 'Your order is in! Thank you for making a lovely little moment with us.')} /><p className="mt-7 text-sm font-black text-[#0D7D78]">{text('تم استلام الطلب', 'Order received')}</p><h1 className="mint-heading mt-2 text-4xl text-[#075f5b]">{text('شكرًا، بدأنا المراجعة', 'Thank you — we’re reviewing it')}</h1><p className="mt-5 leading-7 text-[#47716e]">{text('رقم طلبك هو', 'Your order number is')} <strong dir="ltr">{order?.orderNumber ?? orderNumber}</strong>. {confirmationMessage}</p>{order ? <div className="mx-auto mt-7 max-w-sm rounded-3xl bg-[#9FD9C2]/25 p-5 text-start"><div className="flex justify-between"><span>{text('الإجمالي', 'Total')}</span><strong className="text-[#0D7D78]">{formatMoney(order.totalAmount, locale)}</strong></div>{order.amountDueNow !== undefined ? <div className="mt-3 flex justify-between"><span>{text('المطلوب الآن', 'Due now')}</span><strong>{formatMoney(order.amountDueNow, locale)}</strong></div> : null}{order.amountDueOnDelivery ? <div className="mt-3 flex justify-between"><span>{text('عند الاستلام', 'Due on delivery')}</span><strong>{formatMoney(order.amountDueOnDelivery, locale)}</strong></div> : null}<div className="mt-3 flex justify-between"><span>{text('الحالة', 'Status')}</span><strong>{isCashOnDelivery ? text('بانتظار تأكيد الطلب', 'Awaiting order confirmation') : text('جاري مراجعة الدفع', 'Payment under review')}</strong></div></div> : null}<div className="mt-8 flex flex-wrap justify-center gap-3"><Link className="mint-cta rounded-2xl px-6 py-3" to={localizedPath('/track-order')}>{text('تتبّع الطلب', 'Track order')}</Link><Link className="rounded-2xl border border-[#0D7D78]/20 bg-white px-6 py-3 font-black text-[#075f5b]" to={localizedPath('/stories')}>{text('تسوّق المزيد', 'Keep exploring')}</Link></div></main>
+  return <main className="mx-auto max-w-2xl px-5 py-16 text-center sm:px-8"><MintCompanion pose="happy" tone="mint" className="mx-auto max-w-md text-start" eyebrow={text('مِنت تحتفل', 'Mint is celebrating')} message={text('وصل طلبك! شكرًا لأنك صنعتِ معنا لحظة جميلة.', 'Your order is in! Thank you for making a lovely little moment with us.')} /><p className="mt-7 text-sm font-black text-[#0D7D78]">{text('تم استلام الطلب', 'Order received')}</p><h1 className="mint-heading mt-2 text-4xl text-[#075f5b]">{text('شكرًا، بدأنا المراجعة', 'Thank you — we’re reviewing it')}</h1><p className="mt-5 leading-7 text-[#47716e]">{text('رقم طلبك هو', 'Your order number is')} <strong dir="ltr">{order?.orderNumber ?? orderNumber}</strong>. {confirmationMessage}</p>{order ? <div className="mx-auto mt-7 max-w-sm rounded-3xl bg-[#9FD9C2]/25 p-5 text-start"><div className="flex justify-between"><span>{text('الإجمالي', 'Total')}</span><strong className="text-[#0D7D78]">{formatMoney(order.totalAmount, locale)}</strong></div>{order.amountDueNow !== undefined ? <div className="mt-3 flex justify-between"><span>{text('المطلوب الآن', 'Due now')}</span><strong>{formatMoney(order.amountDueNow, locale)}</strong></div> : null}{order.amountDueOnDelivery ? <div className="mt-3 flex justify-between"><span>{text('عند الاستلام', 'Due on delivery')}</span><strong>{formatMoney(order.amountDueOnDelivery, locale)}</strong></div> : null}<div className="mt-3 flex justify-between"><span>{text('الحالة', 'Status')}</span><strong>{isCashOnDelivery ? text('بانتظار تأكيد الطلب', 'Awaiting order confirmation') : text('جاري مراجعة الدفع', 'Payment under review')}</strong></div></div> : null}<OrderSavePanel orderNumber={order?.orderNumber ?? orderNumber} /><PostOrderAccount orderNumber={order?.orderNumber ?? orderNumber} /><div className="mt-8 flex flex-wrap justify-center gap-3"><Link className="mint-cta rounded-2xl px-6 py-3" to={localizedPath(`/track-order?orderNumber=${encodeURIComponent(order?.orderNumber ?? orderNumber)}`)}>{text('تتبّع الطلب', 'Track order')}</Link><Link className="rounded-2xl border border-[#0D7D78]/20 bg-white px-6 py-3 font-black text-[#075f5b]" to={localizedPath('/stories')}>{text('تسوّق المزيد', 'Keep exploring')}</Link></div></main>
 }

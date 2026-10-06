@@ -156,8 +156,9 @@ export type CheckoutDraft = {
 export type AdminRecoveryLead = RecoveryLeadResponse
 export type AdminRecoveryLeadState = RecoveryLeadState
 
-export type Customer = { id: string; email: string; phone: string | null; displayName: string | null }
+export type Customer = { emailVerified: boolean; id: string; email: string; phone: string | null; displayName: string | null }
 export type CustomerOrder = {
+  reviewSubmitted: boolean
   orderNumber: string
   status: string
   totalAmount: number
@@ -181,6 +182,9 @@ export type LocalizedText = {
   quote?: string
 }
 
+export type BannerMedia = Partial<Record<Locale, { desktop: string; mobile?: string }>>
+export type Category = { id: string; slug: string; name: string; description: string | null; imageUrl: string | null; isFeatured: boolean; bannerMedia: BannerMedia | null }
+
 export type AdminCategory = {
   id: string
   slug: string
@@ -188,6 +192,7 @@ export type AdminCategory = {
   sortOrder: number
   imageUrl: string | null
   cloudinaryPublicId: string | null
+  bannerMedia?: BannerMedia | null
   translations: Array<{ locale: Locale; name: string; description: string | null }>
 }
 
@@ -419,13 +424,15 @@ export class ApiClientError extends Error {
   readonly status: number
   readonly code: string
   readonly fieldErrors: ApiFieldError[]
+  readonly details: Record<string, number>
 
-  constructor(status: number, message: string, options?: { code?: string; fieldErrors?: ApiFieldError[] }) {
+  constructor(status: number, message: string, options?: { code?: string; fieldErrors?: ApiFieldError[]; details?: Record<string, number> }) {
     super(message)
     this.name = 'ApiClientError'
     this.status = status
     this.code = options?.code ?? 'request_failed'
     this.fieldErrors = options?.fieldErrors ?? []
+    this.details = options?.details ?? {}
   }
 }
 
@@ -465,13 +472,16 @@ async function apiFetch<T>(path: string, locale: Locale, init?: RequestInit): Pr
     throw new ApiClientError(response.status, message, {
       ...(error && typeof error.code === 'string' ? { code: error.code } : {}),
       fieldErrors: error ? readFieldErrors(error.fieldErrors) : [],
+      details: error && isRecord(error.details) ? Object.fromEntries(Object.entries(error.details).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))) : {},
     })
   }
   return payload as T
 }
 
-export function getProducts(locale: Locale, options?: { category?: string; featured?: boolean; search?: string }) {
+export function getProducts(locale: Locale, options?: { category?: string; featured?: boolean; search?: string; sort?: 'best_selling'; limit?: number }) {
   const parameters = new URLSearchParams({ locale })
+  if (options?.sort) parameters.set('sort', options.sort)
+  if (options?.limit) parameters.set('limit', String(options.limit))
   if (options?.category) parameters.set('category', options.category)
   if (options?.featured !== undefined) parameters.set('featured', String(options.featured))
   if (options?.search) parameters.set('search', options.search)
@@ -483,7 +493,7 @@ export function getProduct(locale: Locale, slug: string) {
 }
 
 export function getCategories(locale: Locale) {
-  return apiFetch<{ categories: Array<{ id: string; slug: string; name: string; description: string | null; imageUrl: string | null; isFeatured: boolean }> }>(
+  return apiFetch<{ categories: Category[] }>(
     `/api/storefront/categories?locale=${locale}`,
     locale,
   )
@@ -583,8 +593,7 @@ export function removeCheckoutDraftItem(locale: Locale, itemId: string, expected
 }
 
 export function trackOrder(locale: Locale, orderNumber: string, phone: string) {
-  const parameters = new URLSearchParams({ orderNumber, phone })
-  return apiFetch<{ order: { orderNumber: string; status: string } }>(`/api/orders/track?${parameters}`, locale)
+  return apiFetch<{ order: { orderNumber: string; status: string; paymentStatus: string; customerVisibleNote: string | null; reviewSubmitted: boolean } }>('/api/orders/track', locale, { method: 'POST', body: JSON.stringify({ orderNumber, phone }) })
 }
 
 export function getCurrentCustomer(locale: Locale) {
@@ -604,7 +613,7 @@ export function customerLogin(locale: Locale, email: string, password: string) {
 
 export function customerRegister(
   locale: Locale,
-  input: { email: string; password: string; phone?: string; displayName?: string },
+  input: { email: string; password: string; phone?: string; displayName?: string; orderNumber?: string },
 ) {
   return apiFetch<{ customer: Customer }>('/api/customer/register', locale, {
     method: 'POST',
@@ -864,4 +873,34 @@ export function saveAdminTestimonial(input: Omit<AdminTestimonial, 'id'>, id?: s
 
 export function deleteAdminTestimonial(id: string) {
   return apiFetch<null>(`/api/admin/testimonials/${id}`, ADMIN_LOCALE, { method: 'DELETE' })
+}
+
+export type CustomerReview = { id: string; displayName: string; rating: number; comment: string; locale: string; createdAt: string; verifiedPurchase: boolean }
+export type AdminReview = CustomerReview & { orderNumber: string; status: string; moderationReason: string | null }
+export function getReviews(locale: Locale) {
+  return apiFetch<{ reviews: CustomerReview[]; count: number; average: number | null }>('/api/storefront/reviews', locale)
+}
+export function submitReview(locale: Locale, payload: { orderNumber: string; phone?: string; displayName: string; rating: number; comment: string; publicationConsent: boolean }) {
+  return apiFetch<{ submitted: boolean }>('/api/orders/review', locale, { method: 'POST', body: JSON.stringify(payload) })
+}
+export function getAdminReviews(status: string) {
+  return apiFetch<{ reviews: AdminReview[] }>(`/api/admin/reviews?status=${encodeURIComponent(status)}`, 'en')
+}
+export function moderateReview(id: string, status: 'published' | 'rejected', reason: string) {
+  return apiFetch(`/api/admin/reviews/${encodeURIComponent(id)}/moderate`, 'en', { method: 'POST', body: JSON.stringify({ status, reason }) })
+}
+export function requestEmailVerification(locale: Locale) {
+  return apiFetch('/api/customer/email-verification/request', locale, { method: 'POST' })
+}
+export function confirmEmailVerification(locale: Locale, token: string) {
+  return apiFetch('/api/customer/email-verification/confirm', locale, { method: 'POST', body: JSON.stringify({ token }) })
+}
+export function getPostOrderCustomer(locale: Locale, orderNumber: string) {
+  return apiFetch<{ customer: { displayName: string; email: string; phone: string }; claimed: boolean }>(`/api/customer/post-order/${encodeURIComponent(orderNumber)}`, locale)
+}
+export function claimPostOrder(locale: Locale, orderNumber: string) {
+  return apiFetch('/api/customer/orders/claim', locale, { method: 'POST', body: JSON.stringify({ orderNumber }) })
+}
+export function reviewAdminPayment(orderNumber: string, decision: string, customerVisibleNote: string) {
+  return apiFetch(`/api/admin/orders/${encodeURIComponent(orderNumber)}/payment-review`, 'en', { method: 'POST', body: JSON.stringify({ decision, customerVisibleNote }) })
 }

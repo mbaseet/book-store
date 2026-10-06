@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { STOREFRONT_LOCALES, type StorefrontLocale } from '@shared/constants'
 import { announcementBarSchema, editablePageKeySchema, trackingSettingsSchema } from '@shared/contracts/content'
@@ -17,6 +17,8 @@ import {
   productMediaTable,
   productTranslationsTable,
   productsTable,
+  orderItemsTable,
+  ordersTable,
   siteSettingsTable,
   testimonialTranslationsTable,
   testimonialsTable,
@@ -174,6 +176,10 @@ publicStorefrontRoutes.get('/products', async (context) => {
   const locale = requestLocale(context)
   const categorySlug = context.req.query('category')?.trim().toLocaleLowerCase('en-US')
   const featured = context.req.query('featured')
+  const sort = context.req.query('sort')
+  const rawLimit = context.req.query('limit')
+  const limit = rawLimit ? Number(rawLimit) : undefined
+  if ((sort && sort !== 'best_selling') || (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100))) return errorResponse(context, 422, 'invalid_filter', 'Choose a valid catalog sort and limit.')
   const search = context.req.query('search')?.trim().toLocaleLowerCase('en-US')
   if (categorySlug && !slugIsValid(categorySlug)) {
     return errorResponse(context, 422, 'invalid_category', 'The selected category is invalid.')
@@ -220,14 +226,14 @@ publicStorefrontRoutes.get('/products', async (context) => {
       .where(and(...conditions))
       .orderBy(asc(productsTable.sortOrder), asc(productsTable.createdAt))
   }
+  if (sort === 'best_selling') {
+    const sales = await db.select({ productId: orderItemsTable.productId, units: sql<number>`sum(${orderItemsTable.quantity})` }).from(orderItemsTable).innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id)).where(eq(ordersTable.status, 'delivered')).groupBy(orderItemsTable.productId)
+    const quantities = new Map(sales.map((sale) => [sale.productId, sale.units]))
+    rows = rows.filter((row) => (quantities.get(row.id) ?? 0) > 0).sort((left, right) => (quantities.get(right.id) ?? 0) - (quantities.get(left.id) ?? 0))
+  }
   const products = await buildProductCards(db, rows, locale)
-  return context.json({
-    products: search
-      ? products.filter((product) =>
-          `${product.title} ${product.shortDescription ?? ''}`.toLocaleLowerCase(locale).includes(search),
-        )
-      : products,
-  })
+  const filtered = search ? products.filter((product) => `${product.title} ${product.shortDescription ?? ''}`.toLocaleLowerCase(locale).includes(search)) : products
+  return context.json({ products: limit ? filtered.slice(0, limit) : filtered })
 })
 
 publicStorefrontRoutes.get('/products/:slug', async (context) => {
@@ -352,6 +358,7 @@ publicStorefrontRoutes.get('/categories', async (context) => {
               name: translation.name,
               description: translation.description,
               imageUrl: category.imageUrl,
+              bannerMedia: category.bannerMedia,
               isFeatured: category.isFeatured,
             },
           ]

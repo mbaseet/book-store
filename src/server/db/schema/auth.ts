@@ -15,6 +15,7 @@ export const customerAccountsTable = sqliteTable(
     id: idColumn(),
     email: text('email').notNull().unique(),
     passwordHash: text('password_hash').notNull(),
+    emailVerifiedAt: integer('email_verified_at', { mode: 'timestamp_ms' }),
     phone: text('phone'),
     displayName: text('display_name'),
     createdAt: createdAtColumn(),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Clock3, Leaf, Mail, Menu, MessageCircle, Phone, ShoppingBag, X } from 'lucide-react'
+import { Clock3, Leaf, Mail, Menu, MessageCircle, Phone, ShoppingBag, UserRound, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom'
 import { useCart } from '../features/cart/CartContext'
@@ -81,6 +81,14 @@ export function StorefrontShell() {
     : null
   const announcementLink = safePublicLink(announcement?.href)
   const [menuOpen, setMenuOpen] = useState(false)
+  const navigation = [
+    { title: text('القصص', 'Stories'), path: '/stories' },
+    { title: text('كتب التلوين', 'Coloring books'), path: null },
+    { title: text('استيكرز', 'Stickers'), path: null },
+    { title: text('تعلّم والعب', 'Learn & play'), path: null },
+    { title: text('كيف تعمل', 'How it works'), path: '/how-it-works' },
+    { title: text('تتبّع الطلب', 'Track order'), path: '/track-order' },
+  ]
 
   useEffect(() => {
     document.documentElement.lang = locale
@@ -99,18 +107,13 @@ export function StorefrontShell() {
         </div> : null}
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-5 py-3 sm:px-8">
           <Link to={localizedPath('/')} className="flex items-center gap-2" aria-label={brandName}>
-            <img src="/brand/mint-meow-logo-mint.png" alt="Mint Meow" className="h-10 w-12 object-contain sm:h-12 sm:w-14" />
-            <span className="hidden text-sm font-black tracking-[.08em] text-[#075f5b] sm:block">MINT MEOW</span>
+            <img src="/brand/ux-refresh/logo.svg" alt="Mint Meow" width="1087" height="708" className="h-12 w-auto object-contain sm:h-16" />
           </Link>
-          <nav className="hidden items-center gap-6 text-sm font-extrabold text-[#075f5b] lg:flex">
-            <Link className="transition hover:text-[#0D7D78]" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')}</Link>
-            <Link className="transition hover:text-[#0D7D78]" to={localizedPath('/stories')}>{text('هدايا مخصّصة', 'Personalized gifts')}</Link>
-            <Link className="transition hover:text-[#0D7D78]" to={localizedPath('/stories')}>{text('تعلّم والعب', 'Learn & play')}</Link>
-            <Link className="transition hover:text-[#0D7D78]" to={localizedPath('/how-it-works')}>{text('كيف تعمل', 'How it works')}</Link>
-            <Link className="transition hover:text-[#0D7D78]" to={localizedPath('/track-order')}>{text('تتبّع الطلب', 'Track order')}</Link>
+          <nav aria-label={text('القائمة الرئيسية', 'Main navigation')} className="hidden items-center gap-5 text-sm font-extrabold text-[#075f5b] xl:flex">
+            {navigation.map((item) => item.path ? <Link key={item.title} className="transition hover:text-[#0D7D78]" to={localizedPath(item.path)}>{item.title}</Link> : <span key={item.title} aria-disabled="true" className="flex flex-col gap-0.5 text-[#47716e]">{item.title}<span className="text-[10px] font-semibold">{text('قريبًا', 'Coming soon')}</span></span>)}
           </nav>
           <div className="flex items-center gap-2">
-            <button className="grid size-10 place-items-center rounded-2xl border border-[#0D7D78]/15 bg-white text-[#075f5b] lg:hidden" type="button" onClick={() => setMenuOpen((current) => !current)} aria-label={text('القائمة', 'Menu')}>
+            <button className="grid size-10 place-items-center rounded-2xl border border-[#0D7D78]/15 bg-white text-[#075f5b] xl:hidden" type="button" onClick={() => setMenuOpen((current) => !current)} aria-label={text('القائمة', 'Menu')} aria-expanded={menuOpen} aria-controls="mobile-navigation">
               {menuOpen ? <X size={17} /> : <Menu size={17} />}
             </button>
             <button
@@ -122,6 +125,7 @@ export function StorefrontShell() {
               <span className="sm:hidden" aria-hidden="true">{locale === 'ar' ? 'EN' : 'AR'}</span>
               <span className="hidden sm:inline">{locale === 'ar' ? 'English' : 'العربية'}</span>
             </button>
+            <Link to={localizedPath('/account')} aria-label={text('حسابي', 'My account')} className="grid size-10 place-items-center rounded-xl text-[#075f5b] hover:bg-[#9FD9C2]/30"><UserRound size={19} /></Link>
             <Link
               to={localizedPath('/checkout')}
               className="relative grid size-10 place-items-center rounded-2xl bg-[#0D7D78] text-[#FAF8F3] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#075f5b]"
@@ -132,7 +136,7 @@ export function StorefrontShell() {
             </Link>
           </div>
         </div>
-        {menuOpen ? <nav className="border-t border-[#0D7D78]/10 bg-[#FAF8F3] px-5 py-3 lg:hidden"><div className="mx-auto grid max-w-7xl gap-1 text-sm font-extrabold text-[#075f5b]"><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/stories')}>{text('تسوّق الكل', 'Shop all')}</Link><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/stories')}>{text('هدايا مخصّصة', 'Personalized gifts')}</Link><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/stories')}>{text('تعلّم والعب', 'Learn & play')}</Link><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/how-it-works')}>{text('كيف تعمل', 'How it works')}</Link><Link onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath('/track-order')}>{text('تتبّع الطلب', 'Track order')}</Link></div></nav> : null}
+        {menuOpen ? <nav id="mobile-navigation" aria-label={text('القائمة الرئيسية', 'Main navigation')} className="border-t border-[#0D7D78]/10 bg-[#FAF8F3] px-5 py-3 xl:hidden"><div className="mx-auto grid max-w-7xl gap-1 text-sm font-extrabold text-[#075f5b]">{navigation.map((item) => item.path ? <Link key={item.title} onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 hover:bg-[#9FD9C2]/30" to={localizedPath(item.path)}>{item.title}</Link> : <span key={item.title} aria-disabled="true" className="flex items-center justify-between rounded-2xl px-4 py-3 text-[#47716e]">{item.title}<span className="text-xs">{text('قريبًا', 'Coming soon')}</span></span>)}</div></nav> : null}
       </header>
       <Outlet />
       {settings?.tracking ? <TrackingConsentBanner tracking={settings.tracking} /> : null}

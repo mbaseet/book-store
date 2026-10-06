@@ -121,11 +121,15 @@ export const productWriteSchema = z
     }
   })
 
+const publicImagePath = z.string().trim().max(2000).refine((value) => value.startsWith('https://') || /^\/brand\/[a-zA-Z0-9_./-]+$/.test(value), 'Use an HTTPS image URL or a /brand/ image path.')
+const bannerImageSchema = z.object({ desktop: publicImagePath, mobile: publicImagePath.optional() })
+
 export const categoryWriteSchema = z.object({
   slug: slugSchema,
   isFeatured: z.boolean().default(false),
   sortOrder: z.number().int().min(0).max(10_000).default(0),
-  imageUrl: z.string().trim().url().max(2_000).nullable().optional(),
+  imageUrl: publicImagePath.nullable().optional(),
+  bannerMedia: z.object({ ar: bannerImageSchema.optional(), en: bannerImageSchema.optional() }).nullable().optional(),
   cloudinaryPublicId: z.string().trim().min(1).max(500).nullable().optional(),
   translations: localizedArray(
     z.object({

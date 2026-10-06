@@ -1,3 +1,4 @@
+import { VerifyEmailPage } from './components/OrderExperience'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { CartProvider } from './features/cart/CartContext'
@@ -36,6 +37,7 @@ function App() {
       <Route path="order-confirmation/:orderNumber" element={<OrderConfirmationPage />} />
       <Route path="track-order" element={<TrackOrderPage />} />
       <Route path="account" element={<AccountPage />} />
+      <Route path="account/verify-email" element={<VerifyEmailPage />} />
       <Route path="reset-password" element={<ResetPasswordPage />} />
       <Route path="how-it-works" element={<HowItWorksPage />} />
       <Route path="faq" element={<FaqPage />} />
@@ -55,6 +57,7 @@ function App() {
         <Route path="order-confirmation/:orderNumber" element={<OrderConfirmationPage />} />
         <Route path="track-order" element={<TrackOrderPage />} />
         <Route path="account" element={<AccountPage />} />
+      <Route path="account/verify-email" element={<VerifyEmailPage />} />
         <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route path="how-it-works" element={<HowItWorksPage />} />
         <Route path="faq" element={<FaqPage />} />

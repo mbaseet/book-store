@@ -90,7 +90,9 @@ export type OrderPricing = {
   paymentEligibility: PaymentEligibility
 }
 
-export class PricingError extends Error {}
+export class PricingError extends Error {
+  constructor(message = 'Pricing is unavailable.', readonly code = 'pricing_unavailable', readonly details?: Record<string, number>) { super(message) }
+}
 
 function effectiveProductPrice(product: PriceableProduct) {
   const salePrice = product.salePriceAmount
@@ -106,14 +108,14 @@ function effectiveProductPrice(product: PriceableProduct) {
 function assertPromoIsEligible(promo: EligiblePromoCode | null, subtotalAmount: number, now: Date) {
   if (promo === null) return null
 
-  if (!promo.isActive) throw new PricingError('This promo code is not active.')
-  if (promo.startsAt !== null && promo.startsAt > now) throw new PricingError('This promo code is not active yet.')
-  if (promo.endsAt !== null && promo.endsAt < now) throw new PricingError('This promo code has expired.')
+  if (!promo.isActive) throw new PricingError('This promo code is not active.', 'promo_inactive')
+  if (promo.startsAt !== null && promo.startsAt > now) throw new PricingError('This promo code is not active yet.', 'promo_not_started')
+  if (promo.endsAt !== null && promo.endsAt <= now) throw new PricingError('This promo code has expired.', 'promo_expired')
   if (promo.maxRedemptions !== null && promo.redemptionCount >= promo.maxRedemptions) {
-    throw new PricingError('This promo code has reached its usage limit.')
+    throw new PricingError('This promo code has reached its usage limit.', 'promo_limit_reached')
   }
   if (promo.minimumSubtotalAmount !== null && subtotalAmount < promo.minimumSubtotalAmount) {
-    throw new PricingError('This promo code requires a higher cart subtotal.')
+    throw new PricingError('This promo code requires a higher cart subtotal.', 'promo_minimum_not_met', { minimumSubtotalAmount: promo.minimumSubtotalAmount, shortfallAmount: promo.minimumSubtotalAmount - subtotalAmount })
   }
 
   return promo

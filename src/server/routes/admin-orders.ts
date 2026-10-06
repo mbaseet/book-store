@@ -1,5 +1,7 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { z } from 'zod'
+import { dispatchNotifications, notificationInsert, orderEmail } from '../services/notifications'
 import { ORDER_STATUSES, type OrderStatus } from '@shared/constants'
 import {
   addOrderInternalNoteSchema,
@@ -16,7 +18,7 @@ import {
   ordersTable,
 } from '../db/schema'
 import { errorResponse, hasTrustedOrigin, parseJson } from '../lib/http'
-import { canTransitionOrderStatus, isTerminalOrderStatus } from '../services/order-status'
+import { canTransitionOrderStatus, isTerminalOrderStatus, paymentUpdatesForStatus, purchasedItemIsPersonalized } from '../services/order-status'
 import { parsePersonalizationSnapshot } from '../services/personalization'
 import { fetchAuthenticatedCloudinaryAsset, PrivateUploadError } from '../services/private-uploads'
 import { requireAdmin } from './auth'
@@ -191,7 +193,7 @@ adminOrderRoutes.get('/admin/orders/:orderNumber', async (context) => {
   const currentOrderStatus = isOrderStatus(order.status) ? order.status : null
   return context.json({
     allowedNextStatuses: currentOrderStatus
-      ? ORDER_STATUSES.filter((candidate) => canTransitionOrderStatus(currentOrderStatus, candidate))
+      ? ORDER_STATUSES.filter((candidate) => canTransitionOrderStatus(currentOrderStatus, candidate, items.some(purchasedItemIsPersonalized)))
       : [],
     order: {
       ...order,
@@ -254,94 +256,55 @@ adminOrderRoutes.get('/admin/orders/:orderNumber/assets/:assetId', async (contex
 })
 
 adminOrderRoutes.post('/admin/orders/:orderNumber/status', async (context) => {
-  if (!hasTrustedOrigin(context)) {
-    return errorResponse(context, 403, 'untrusted_origin', 'This request must come from this storefront.')
-  }
+  if (!hasTrustedOrigin(context)) return errorResponse(context, 403, 'untrusted_origin', 'Use this storefront.')
   const admin = await requireAdmin(context)
-  if (!admin) return errorResponse(context, 401, 'not_authenticated', 'Please sign in to continue.')
+  if (!admin) return errorResponse(context, 401, 'not_authenticated', 'Sign in first.')
   const parsed = await parseJson(context, updateOrderStatusSchema)
   if (!parsed.success) return parsed.response
-
   const db = createDb(context.env)
   const order = await findOrderByNumber(db, context.req.param('orderNumber'))
-  if (!order) return errorResponse(context, 404, 'order_not_found', 'The order was not found.')
-  if (!isOrderStatus(order.status) || !canTransitionOrderStatus(order.status, parsed.data.status)) {
-    return errorResponse(context, 409, 'invalid_status_transition', 'That status change is not allowed.')
-  }
-
+  if (!order) return errorResponse(context, 404, 'order_not_found', 'Order not found.')
+  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id))
+  if (!isOrderStatus(order.status) || !canTransitionOrderStatus(order.status, parsed.data.status, items.some(purchasedItemIsPersonalized))) return errorResponse(context, 409, 'invalid_status_transition', 'That status change is not allowed.')
   const now = new Date()
-  const purgeAt = isTerminalOrderStatus(parsed.data.status)
-    ? new Date(now.getTime() + RETENTION_AFTER_TERMINAL_MS)
-    : null
-  const paymentUpdates: {
-    paymentStatus?: string
-    amountPaid?: number
-    amountDueOnDelivery?: number
-  } = (() => {
-    if (parsed.data.status === 'payment_confirmed') {
-      if (order.paymentPlan === 'personalized_deposit_cod') {
-        return { paymentStatus: 'deposit_confirmed', amountPaid: order.amountDueNow }
-      }
-      return { paymentStatus: 'paid', amountPaid: order.totalAmount }
-    }
-    if (parsed.data.status === 'payment_rejected') {
-      return { paymentStatus: 'payment_rejected', amountPaid: 0 }
-    }
-    if (parsed.data.status === 'payment_submitted') {
-      return {
-        paymentStatus: order.paymentPlan === 'personalized_deposit_cod' ? 'deposit_submitted' : 'payment_submitted',
-        amountPaid: 0,
-      }
-    }
-    if (
-      (parsed.data.status === 'in_production' || parsed.data.status === 'shipped') &&
-      order.paymentStatus === 'cod_pending_confirmation'
-    ) {
-      return { paymentStatus: 'cod_due' }
-    }
-    if (parsed.data.status === 'delivered' && order.amountDueOnDelivery > 0) {
-      return {
-        paymentStatus: 'cash_collected',
-        amountPaid: order.totalAmount,
-        amountDueOnDelivery: 0,
-      }
-    }
-    return {}
-  })()
-  const updates = {
-    status: parsed.data.status,
-    updatedAt: now,
-    ...paymentUpdates,
-    ...(purgeAt ? { sensitiveDataPurgeAt: purgeAt } : {}),
-  }
-  const updateOrder = db.update(ordersTable).set(updates).where(eq(ordersTable.id, order.id))
-  const insertHistory = db.insert(orderStatusHistoryTable).values({
-    orderId: order.id,
-    fromStatus: order.status,
-    toStatus: parsed.data.status,
-    changedByAdminId: admin.id,
-    customerVisibleNote: parsed.data.customerVisibleNote || null,
-  })
-  if (purgeAt) {
-    await db.batch([
-      updateOrder,
-      insertHistory,
-      db
-        .update(orderSensitiveAssetsTable)
-        .set({ deleteAfter: purgeAt })
-        .where(and(eq(orderSensitiveAssetsTable.orderId, order.id), isNull(orderSensitiveAssetsTable.deletedAt))),
-    ])
-  } else {
-    await db.batch([updateOrder, insertHistory])
-  }
+  const purgeAt = isTerminalOrderStatus(parsed.data.status) ? new Date(now.getTime() + RETENTION_AFTER_TERMINAL_MS) : order.sensitiveDataPurgeAt
+  const payment = paymentUpdatesForStatus(order, parsed.data.status)
+  const historyId = crypto.randomUUID()
+  const reviewEmail = parsed.data.status === 'delivered' ? orderEmail(context.env, order, 'review_invitation') : null
+  const job = reviewEmail ? await notificationInsert(db, context.env, `review:${order.id}`, 'review_invitation', reviewEmail) : null
+  // D1 serializes the batch. changes() binds history to a successful CAS
+  // update, and the unique history ID gates every subsequent side effect.
+  const statements = [
+    context.env.DB.prepare('UPDATE orders SET status = ?, payment_status = ?, amount_paid = ?, amount_due_on_delivery = ?, updated_at = ?, sensitive_data_purge_at = ? WHERE id = ? AND status = ? RETURNING id')
+      .bind(parsed.data.status, payment.paymentStatus, payment.amountPaid, payment.amountDueOnDelivery, now.getTime(), purgeAt?.getTime() ?? null, order.id, order.status),
+    context.env.DB.prepare('INSERT INTO order_status_history (id, order_id, from_status, to_status, changed_by_admin_id, customer_visible_note, created_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1')
+      .bind(historyId, order.id, order.status, parsed.data.status, admin.id, parsed.data.customerVisibleNote || null, now.getTime()),
+  ]
+  if (purgeAt) statements.push(context.env.DB.prepare('UPDATE order_sensitive_assets SET delete_after = ? WHERE order_id = ? AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM order_status_history WHERE id = ?)').bind(purgeAt.getTime(), order.id, historyId))
+  if (job) statements.push(context.env.DB.prepare('INSERT INTO notification_jobs (id, dedupe_key, kind, payload, next_attempt_at) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM order_status_history WHERE id = ?) ON CONFLICT(dedupe_key) DO NOTHING').bind(job.id, job.dedupeKey, job.kind, job.payload, job.nextAttemptAt.getTime(), historyId))
+  const result = await context.env.DB.batch(statements)
+  if (!result[0].results.length) return errorResponse(context, 409, 'invalid_status_transition', 'Another administrator updated this order. Refresh and try again.')
+  context.executionCtx.waitUntil(dispatchNotifications(db, context.env))
+  return context.json({ status: parsed.data.status, ...payment, sensitiveDataPurgeAt: purgeAt?.toISOString() ?? null })
+})
 
-  return context.json({
-    status: parsed.data.status,
-    paymentStatus: paymentUpdates.paymentStatus ?? order.paymentStatus,
-    amountPaid: paymentUpdates.amountPaid ?? order.amountPaid,
-    amountDueOnDelivery: paymentUpdates.amountDueOnDelivery ?? order.amountDueOnDelivery,
-    sensitiveDataPurgeAt: purgeAt?.toISOString() ?? null,
-  })
+adminOrderRoutes.post('/admin/orders/:orderNumber/payment-review', async (context) => {
+  if (!hasTrustedOrigin(context)) return errorResponse(context, 403, 'untrusted_origin', 'Use this storefront.')
+  const admin = await requireAdmin(context)
+  if (!admin) return errorResponse(context, 401, 'not_authenticated', 'Sign in first.')
+  const parsed = await parseJson(context, z.object({ decision: z.enum(['action_required', 'payment_rejected', 'resubmitted']), customerVisibleNote: z.string().trim().min(1).max(500) }))
+  if (!parsed.success) return parsed.response
+  const db = createDb(context.env)
+  const order = await findOrderByNumber(db, context.req.param('orderNumber'))
+  if (!order || order.status !== 'in_review' || order.paymentPlan === 'cash_on_delivery') return errorResponse(context, 409, 'invalid_status_transition', 'Only transfers awaiting review can be reviewed.')
+  const paymentStatus = parsed.data.decision === 'resubmitted' ? (order.paymentPlan === 'personalized_deposit_cod' ? 'deposit_submitted' : 'payment_submitted') : parsed.data.decision
+  const now = Date.now()
+  const result = await context.env.DB.batch([
+    context.env.DB.prepare('UPDATE orders SET payment_status = ?, updated_at = ? WHERE id = ? AND status = ? AND payment_status = ? RETURNING id').bind(paymentStatus, now, order.id, order.status, order.paymentStatus),
+    context.env.DB.prepare('INSERT INTO order_status_history (id, order_id, from_status, to_status, changed_by_admin_id, customer_visible_note, created_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1').bind(crypto.randomUUID(), order.id, order.status, order.status, admin.id, parsed.data.customerVisibleNote, now),
+  ])
+  if (!result[0].results.length) return errorResponse(context, 409, 'invalid_status_transition', 'This order changed. Refresh and try again.')
+  return context.json({ paymentStatus })
 })
 
 adminOrderRoutes.post('/admin/orders/:orderNumber/notes', async (context) => {

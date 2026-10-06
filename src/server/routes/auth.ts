@@ -1,5 +1,9 @@
-import { and, eq, gt, isNull } from 'drizzle-orm'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { z } from 'zod'
+import { getPostOrderContext } from '../services/post-order'
+import { prepareEmailVerification } from '../services/email-verification'
+import { dispatchNotifications } from '../services/notifications'
 import {
   adminLoginSchema,
   adminBootstrapSchema,
@@ -11,6 +15,8 @@ import {
 import { createDb } from '../db'
 import {
   adminsTable,
+  emailVerificationTokensTable,
+  notificationJobsTable,
   customerAccountsTable,
   customerSessionsTable,
   ordersTable,
@@ -41,12 +47,13 @@ const CUSTOMER_RESET_LIFETIME_MS = 30 * 60 * 1000
 
 type AppEnvironment = { Bindings: Bindings }
 
-function customerResponse(customer: { id: string; email: string; phone: string | null; displayName: string | null }) {
+function customerResponse(customer: { id: string; email: string; phone: string | null; displayName: string | null; emailVerifiedAt?: Date | null }) {
   return {
     id: customer.id,
     email: customer.email,
     phone: customer.phone,
     displayName: customer.displayName,
+    emailVerified: Boolean(customer.emailVerifiedAt),
   }
 }
 
@@ -108,11 +115,17 @@ authRoutes.post('/customer/register', async (context) => {
     phone: parsed.data.phone || null,
     displayName: parsed.data.displayName || null,
   }
-  await db.insert(customerAccountsTable).values(customer)
-  await db
-    .update(ordersTable)
-    .set({ customerAccountId: customer.id })
-    .where(and(eq(ordersTable.email, email), isNull(ordersTable.customerAccountId)))
+  const contextOrder = parsed.data.orderNumber ? await getPostOrderContext(context, context.env, parsed.data.orderNumber) : null
+  if (parsed.data.orderNumber && !contextOrder) return errorResponse(context, 409, 'post_order_expired', 'Open a new account from the account page, then verify your email to find matching orders.')
+  if (contextOrder?.customerAccountId) return errorResponse(context, 409, 'order_already_claimed', 'Sign in to the account for this order.')
+  const verification = await prepareEmailVerification(db, context.env, customer.id, email, context.req.header('Accept-Language')?.startsWith('ar') ? 'ar' : 'en')
+  await db.batch([
+    db.insert(customerAccountsTable).values(customer),
+    db.insert(emailVerificationTokensTable).values(verification.token),
+    db.insert(notificationJobsTable).values(verification.job),
+    ...(contextOrder ? [db.update(ordersTable).set({ customerAccountId: customer.id }).where(and(eq(ordersTable.id, contextOrder.id), isNull(ordersTable.customerAccountId)))] : []),
+  ])
+  context.executionCtx.waitUntil(dispatchNotifications(db, context.env))
   await startCustomerSession(context, db, customer.id)
 
   return context.json({ customer: customerResponse(customer) }, 201)
@@ -148,12 +161,49 @@ authRoutes.post('/customer/login', async (context) => {
       .where(eq(customerAccountsTable.id, customer.id))
   }
 
-  await db
-    .update(ordersTable)
-    .set({ customerAccountId: customer.id })
-    .where(and(eq(ordersTable.email, customer.email), isNull(ordersTable.customerAccountId)))
+  if (customer.emailVerifiedAt) {
+    await db.update(ordersTable).set({ customerAccountId: customer.id })
+      .where(and(eq(ordersTable.email, customer.email), isNull(ordersTable.customerAccountId)))
+  }
   await startCustomerSession(context, db, customer.id)
   return context.json({ customer: customerResponse(customer) })
+})
+
+authRoutes.post('/customer/email-verification/request', async (context) => {
+  if (!hasTrustedOrigin(context)) return errorResponse(context, 403, 'untrusted_origin', 'Use this storefront.')
+  const db = createDb(context.env)
+  const customer = await getCurrentCustomer(context, db)
+  if (!customer) return errorResponse(context, 401, 'not_authenticated', 'Sign in first.')
+  if (customer.emailVerifiedAt) return context.json({ accepted: true })
+  if (!(await checkRateLimit(db, customer.id, 'email_verification_request', { maxAttempts: 4, windowMs: 60 * 60_000 }))) return errorResponse(context, 429, 'rate_limited', 'Try again later.')
+  const verification = await prepareEmailVerification(db, context.env, customer.id, customer.email, context.req.header('Accept-Language')?.startsWith('ar') ? 'ar' : 'en')
+  await db.batch([
+    db.update(emailVerificationTokensTable).set({ usedAt: new Date() }).where(and(eq(emailVerificationTokensTable.customerAccountId, customer.id), isNull(emailVerificationTokensTable.usedAt))),
+    db.insert(emailVerificationTokensTable).values(verification.token),
+    db.insert(notificationJobsTable).values(verification.job),
+  ])
+  context.executionCtx.waitUntil(dispatchNotifications(db, context.env))
+  return context.json({ accepted: true })
+})
+
+authRoutes.post('/customer/email-verification/confirm', async (context) => {
+  if (!hasTrustedOrigin(context)) return errorResponse(context, 403, 'untrusted_origin', 'Use this storefront.')
+  const parsed = await parseJson(context, z.object({ token: z.string().min(32).max(256) }))
+  if (!parsed.success) return parsed.response
+  if (!(await allowAttempt(context, 'email_verification_confirm', 12, 15 * 60_000))) return errorResponse(context, 429, 'rate_limited', 'Try again later.')
+  const db = createDb(context.env)
+  const tokenHash = await hashToken(parsed.data.token)
+  const [token] = await db.select().from(emailVerificationTokensTable).where(and(eq(emailVerificationTokensTable.tokenHash, tokenHash), isNull(emailVerificationTokensTable.usedAt), gt(emailVerificationTokensTable.expiresAt, new Date()))).limit(1)
+  if (!token) return errorResponse(context, 422, 'invalid_verification_token', 'This verification link has expired or was used.')
+  const now = new Date()
+  const result = await db.batch([
+    db.update(emailVerificationTokensTable).set({ usedAt: now }).where(and(eq(emailVerificationTokensTable.id, token.id), isNull(emailVerificationTokensTable.usedAt))).returning({ id: emailVerificationTokensTable.id }),
+    db.update(customerAccountsTable).set({ emailVerifiedAt: now }).where(and(eq(customerAccountsTable.id, token.customerAccountId), sql`exists (select 1 from email_verification_tokens where id = ${token.id} and used_at = ${now.getTime()})`)),
+    db.update(ordersTable).set({ customerAccountId: token.customerAccountId }).where(and(isNull(ordersTable.customerAccountId), sql`${ordersTable.email} = (select email from customer_accounts where id = ${token.customerAccountId} and email_verified_at is not null)`)),
+  ])
+  if (!result[0].length) return errorResponse(context, 422, 'invalid_verification_token', 'This verification link was used.')
+  // Email verification does not silently replace a logged-in customer session.
+  return context.json({ verified: true })
 })
 
 authRoutes.post('/customer/logout', async (context) => {

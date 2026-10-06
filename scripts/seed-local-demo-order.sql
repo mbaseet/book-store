@@ -56,7 +56,7 @@ SELECT
   'c2a78bf9-5014-4e9f-8ffb-0bdf4a40c002',
   'SB-LOCAL-DEMO-01',
   NULL,
-  'payment_confirmed',
+  'confirmed',
   'Demo Customer',
   'demo.customer@example.test',
   '01000000000',
@@ -157,7 +157,7 @@ SELECT
   'c2a78bf9-5014-4e9f-8ffb-0bdf4a40c004',
   id,
   NULL,
-  'payment_submitted',
+  'in_review',
   NULL,
   NULL
 FROM orders
@@ -174,8 +174,8 @@ INSERT OR IGNORE INTO order_status_history (
 SELECT
   'c2a78bf9-5014-4e9f-8ffb-0bdf4a40c005',
   id,
-  'payment_submitted',
-  'payment_confirmed',
+  'in_review',
+  'confirmed',
   NULL,
   'Payment confirmed for this fictional local demo order.'
 FROM orders

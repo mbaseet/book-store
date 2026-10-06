@@ -1,4 +1,5 @@
 import { ApiClientError, type ApiFieldError, type Locale } from './api'
+import { formatMoney } from './format'
 
 type Copy = { ar: string; en: string }
 
@@ -24,6 +25,16 @@ const messages: Record<string, Copy> = {
   already_exists: { ar: 'هذه القيمة مستخدمة بالفعل.', en: 'This value is already in use.' },
   checkout_draft_expired: { ar: 'انتهت جلسة الطلب المؤقتة. أضف القصة مرة أخرى للمتابعة.', en: 'Your saved checkout has expired. Add the story again to continue.' },
   checkout_draft_conflict: { ar: 'تم تحديث الطلب في نافذة أخرى. حدّث الصفحة ثم حاول مرة أخرى.', en: 'This checkout changed in another tab. Refresh and try again.' },
+  promo_not_found: { ar: 'كود الخصم غير صحيح. راجع كتابته أو تابع بدونه.', en: 'Code not found. Check the spelling or continue without a code.' },
+  promo_inactive: { ar: 'هذا الكود غير متاح حاليًا. استخدم كودًا آخر أو تابع بدونه.', en: 'This code is inactive. Try another code or continue without it.' },
+  promo_not_started: { ar: 'لم يبدأ هذا العرض بعد. استخدم كودًا آخر أو تابع بدونه.', en: 'This offer has not started yet. Try another code or continue without it.' },
+  promo_limit_reached: { ar: 'تم استخدام هذا الكود بالكامل. استخدم كودًا آخر أو تابع بدونه.', en: 'This code has reached its usage limit. Try another code or continue without it.' },
+  promo_minimum_not_met: { ar: 'لم يصل طلبك للحد الأدنى لهذا الكود. أضف منتجات أو تابع بدونه.', en: 'Your order is below this code’s minimum spend. Add products or continue without it.' },
+  promo_code_unavailable: { ar: 'لم يعد هذا الكود متاحًا. استخدم كودًا آخر أو تابع بدونه.', en: 'This code is no longer available. Try another code or continue without it.' },
+  email_verification_required: { ar: 'أكد بريدك الإلكتروني لعرض طلباتك.', en: 'Verify your email to view your orders.' },
+  invalid_verification_token: { ar: 'انتهت صلاحية رابط التأكيد أو تم استخدامه. اطلب رابطًا جديدًا من حسابك.', en: 'This verification link has expired or was used. Request a new one from your account.' },
+  email_in_use: { ar: 'يوجد حساب بهذا البريد. سجل الدخول أو أعد تعيين كلمة المرور.', en: 'An account already uses this email. Sign in or reset your password.' },
+  review_already_submitted: { ar: 'لقد أرسلت تقييمًا لهذا الطلب بالفعل.', en: 'You have already submitted a review for this order.' },
   promo_invalid: { ar: 'رمز الخصم غير متاح لهذا الطلب.', en: 'This promo code is not available for this order.' },
   promo_expired: { ar: 'انتهت صلاحية رمز الخصم.', en: 'This promo code has expired.' },
   rate_limited: { ar: 'تمت محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى.', en: 'Too many attempts. Please wait a moment and try again.' },
@@ -42,7 +53,14 @@ export function fieldErrorMessage(locale: Locale, error: ApiFieldError | undefin
 
 export function requestErrorMessage(locale: Locale, error: unknown, fallback?: Copy) {
   const defaultMessage = fallback ?? messages.request_failed
-  if (error instanceof ApiClientError) return copyFor(locale, error.code, defaultMessage)
+  if (error instanceof ApiClientError) {
+    if (error.code === 'promo_minimum_not_met' && Number.isFinite(error.details.minimumSubtotalAmount) && Number.isFinite(error.details.shortfallAmount)) {
+      const minimum = formatMoney(error.details.minimumSubtotalAmount, locale)
+      const shortfall = formatMoney(error.details.shortfallAmount, locale)
+      return locale === 'ar' ? `الحد الأدنى ${minimum}. أضف منتجات بقيمة ${shortfall} أو تابع بدون الكود.` : `Minimum spend is ${minimum}. Add ${shortfall} more in products or continue without this code.`
+    }
+    return copyFor(locale, error.code, defaultMessage)
+  }
   if (error instanceof TypeError) return copyFor(locale, 'network_error', defaultMessage)
   return defaultMessage[locale]
 }

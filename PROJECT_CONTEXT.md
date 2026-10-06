@@ -149,15 +149,21 @@ Read this file before changing checkout, payments, retention, or scope.
 
 - The site exposes order status only. It does not expose courier tracking.
 - New COD orders start in `cod_pending_confirmation` and require an admin
-  confirmation before they can move to `in_production` or `shipped`; they may
-  instead be cancelled. Full transfers and deposits remain manually reviewed.
+  confirmation before they can move to `confirmed`; ready products then use
+  `preparing_order`, while personalized products use `in_production`. Full
+  transfers and deposits start `in_review` and remain manually reviewed.
+- The customer-facing lifecycle is `in_review`, `cod_pending_confirmation`,
+  `confirmed`, `in_production` or `preparing_order`, `ready_to_ship`, `shipped`,
+  `delivered`, or `cancelled`. Payment review remains a separate payment state.
 - The order records payment plan, payment state, InstaPay incentive, amount due
   now, actual amount paid, and amount still due on delivery. When an order with
   a delivery balance is marked delivered, Admin records that balance as cash
   collected. Production, payment review, delivery, and other fulfilment
   operations still happen outside the system.
-- Basic email/password reset is used. Customers can view previous orders but
-  do not manage fulfilment through their account.
+- Account creation is optional after checkout and reuses the customer’s saved
+  name, phone, and email. The email must be verified before prior orders are
+  linked or shown. Customers can view orders and submit one moderated review
+  after delivery, but do not manage fulfilment through their account.
 - Policies are editable from the admin area. Initial Terms, Returns, and
   Privacy text is launch-draft copy and must receive local legal/business
   review before production launch.
@@ -277,8 +283,10 @@ are completed.
   clarity only; final order creation recalculates the price and promotion.
 - Admin reports are operational aggregates only and intentionally exclude
   customer PII and private media. They distinguish submitted order value,
-  accepted order value (`payment_confirmed`, `in_production`, `shipped`, or
-  `delivered`), actual collected revenue (`amountPaid`), pending transfer
+  accepted order value (`confirmed`, `in_production`, `preparing_order`,
+  `ready_to_ship`, `shipped`, or `delivered`), actual collected revenue
+  (`amountPaid`), pending transfer
   value, pending-COD-confirmation value, and COD outstanding on active accepted
-  orders. An approved deposit is never counted as the full order value.
+  orders. An approved deposit is never counted as the full order value, and
+  cancelled orders do not contribute to monetary totals.
 - For a fuller technical map, read docs/architecture.md after this file.
